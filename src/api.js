@@ -3,11 +3,27 @@
  * Connects to the FastAPI backend without hardcoding endpoints across components.
  */
 
-export const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "https://sahayu-backend-8.onrender.com";
+function resolveApiBaseUrl() {
+  const envUrl = import.meta.env.VITE_API_URL;
+
+  if (typeof envUrl === "string" && envUrl.trim().length > 0) {
+    const trimmed = envUrl.trim().replace(/\/+$/, "");
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      return trimmed;
+    }
+  }
+
+  // Deployed Render backend fallback
+  return "https://sahayu-backend-8.onrender.com";
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 async function request(endpoint, options = {}) {
-  const url = `${API_BASE_URL}${endpoint}`;
+  // Ensure endpoint begins with /
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  const url = `${API_BASE_URL}${cleanEndpoint}`;
+
   const config = {
     headers: {
       "Content-Type": "application/json",
@@ -46,21 +62,22 @@ async function request(endpoint, options = {}) {
     if (error.status) throw error;
     // Network or other unexpected errors
     throw new Error(
-      error.message || "Failed to communicate with backend server.",
+      error.message ||
+        `Failed to connect to backend at ${API_BASE_URL}. Please ensure the backend is running.`,
       { cause: error }
     );
   }
 }
 
-// System
+// System Health Check
 export const getHealth = () => request("/health");
 
-// Services & Skills
+// Services & Skills API
 export const getServices = () => request("/services");
 export const getService = (serviceId) => request(`/services/${serviceId}`);
 export const getSkills = () => request("/skills");
 
-// Workers
+// Workers API
 export const getWorkers = (activeOnly = true) =>
   request(`/workers?active_only=${activeOnly}`);
 
@@ -90,7 +107,7 @@ export const updateWorkerAvailability = (workerId, isAvailable) =>
     body: JSON.stringify({ is_available: Boolean(isAvailable) }),
   });
 
-// Customer
+// Customer API
 export const getCustomer = (customerId) => request(`/customers/${customerId}`);
 export const createCustomer = (customerData) =>
   request("/customers", {
@@ -98,7 +115,7 @@ export const createCustomer = (customerData) =>
     body: JSON.stringify(customerData),
   });
 
-// Bookings
+// Bookings API
 export const createBooking = ({
   customer_id,
   worker_id,
@@ -147,7 +164,7 @@ export const cancelBooking = (bookingId) =>
     method: "PATCH",
   });
 
-// Reviews
+// Reviews API
 export const getWorkerReviews = (workerId) =>
   request(`/workers/${workerId}/reviews`);
 
