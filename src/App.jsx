@@ -15,13 +15,13 @@ import {
   useNavigate,
 } from "react-router-dom";
 
-import heroWorker from "./assets/hero-worker.jpg";
-import plumbing from "./assets/plumbing.jpg";
-import electrical from "./assets/electrical.jpg";
-import cleaning from "./assets/cleaning.jpg";
-import carpentry from "./assets/carpentry.jpg";
-import gardening from "./assets/gardening.jpg";
-import care from "./assets/care.jpg";
+import heroWorker from "./assets/hero-worker.png";
+import plumbing from "./assets/plumbing.png";
+import electrical from "./assets/electrical.png";
+import cleaning from "./assets/cleaning.png";
+import carpentry from "./assets/carpentry.png";
+import gardening from "./assets/gardening.png";
+import care from "./assets/care.png";
 
 function Home() {
   const navigate = useNavigate();

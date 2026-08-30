@@ -379,8 +379,22 @@ a {
 }
 
 .service-icon {
+  display: inline-flex;
   font-size: 28px;
-  margin: 18px 20px 10px;
+  margin: 18px 8px 8px 20px;
+  vertical-align: middle;
+}
+.service-card h3 {
+  display: inline-block;
+  margin: 0;
+  vertical-align: middle;
+  margin-top: 15px;
+}
+
+.service-card p {
+  margin: 4px 20px 0;
+  color: #71817b;
+  line-height: 1.5;
 }
 
 .service-card h3,
@@ -1539,4 +1553,7 @@ footer > p {
     width: 100%;
     min-width: 0;
   }
+}
+.service-card h3 {
+  font-size: 35px;
 }
