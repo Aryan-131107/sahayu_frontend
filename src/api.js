@@ -1,72 +1,114 @@
 /**
  * Central API Client for Sahāyu
- * Connects to the FastAPI backend without hardcoding endpoints across components.
+ * Connects to the FastAPI backend with automatic proxy fallback for Vercel/production CORS compatibility.
  */
 
-function resolveApiBaseUrl() {
-  const envUrl = import.meta.env.VITE_API_URL;
+let cachedWorkingBaseUrl = null;
 
+function getApiBaseCandidates() {
+  const envUrl = import.meta.env.VITE_API_URL;
+  const list = [];
+
+  // 1. If running in browser and on a non-localhost domain (e.g. Vercel),
+  // prioritize the same-origin /api rewrite to avoid CORS preflight rejection.
+  const isBrowser = typeof window !== "undefined";
+  const isLocalhost =
+    isBrowser &&
+    (window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1");
+
+  if (!isLocalhost && isBrowser) {
+    list.push("/api");
+  }
+
+  // 2. User environment variable
   if (typeof envUrl === "string" && envUrl.trim().length > 0) {
     const trimmed = envUrl.trim().replace(/\/+$/, "");
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-      return trimmed;
+    if (!list.includes(trimmed)) {
+      list.push(trimmed);
     }
   }
 
-  // Deployed Render backend fallback
-  return "https://sahayu-backend-8.onrender.com";
+  // 3. Direct Render backend
+  const directRender = "https://sahayu-backend-8.onrender.com";
+  if (!list.includes(directRender)) {
+    list.push(directRender);
+  }
+
+  // 4. Local / Vite proxy fallback
+  if (!list.includes("/api")) {
+    list.push("/api");
+  }
+
+  return list;
 }
 
-export const API_BASE_URL = resolveApiBaseUrl();
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "https://sahayu-backend-8.onrender.com";
 
 async function request(endpoint, options = {}) {
-  // Ensure endpoint begins with /
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-  const url = `${API_BASE_URL}${cleanEndpoint}`;
 
-  const config = {
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-    ...options,
-  };
+  const candidates = cachedWorkingBaseUrl
+    ? [cachedWorkingBaseUrl, ...getApiBaseCandidates().filter((c) => c !== cachedWorkingBaseUrl)]
+    : getApiBaseCandidates();
 
-  try {
-    const response = await fetch(url, config);
-    let data = null;
-    const contentType = response.headers.get("content-type");
-    if (contentType && contentType.includes("application/json")) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      data = text ? { message: text } : null;
+  let lastError = null;
+
+  for (const base of candidates) {
+    const url = `${base}${cleanEndpoint}`;
+    const config = {
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+      ...options,
+    };
+
+    try {
+      const response = await fetch(url, config);
+      let data = null;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        data = text ? { message: text } : null;
+      }
+
+      if (!response.ok) {
+        const message =
+          data?.detail ||
+          (Array.isArray(data?.detail)
+            ? data.detail.map((d) => d.msg || JSON.stringify(d)).join(", ")
+            : null) ||
+          data?.message ||
+          `Request failed with status ${response.status}`;
+        const err = new Error(message);
+        err.status = response.status;
+        err.data = data;
+        throw err;
+      }
+
+      // Cache the base URL that succeeded
+      cachedWorkingBaseUrl = base;
+      return data;
+    } catch (error) {
+      lastError = error;
+      // If error is an application/HTTP error (status 400, 404, 422, etc.), do not retry different base URL
+      if (error.status && error.status !== 404) {
+        throw error;
+      }
+      // If network/CORS error ("Failed to fetch"), continue loop to try next candidate
+      console.warn(`[Sahāyu API] Base URL "${base}" failed. Trying next fallback candidate...`);
     }
-
-    if (!response.ok) {
-      const message =
-        data?.detail ||
-        (Array.isArray(data?.detail)
-          ? data.detail.map((d) => d.msg || JSON.stringify(d)).join(", ")
-          : null) ||
-        data?.message ||
-        `Request failed with status ${response.status}`;
-      const err = new Error(message);
-      err.status = response.status;
-      err.data = data;
-      throw err;
-    }
-
-    return data;
-  } catch (error) {
-    if (error.status) throw error;
-    // Network or other unexpected errors
-    throw new Error(
-      error.message ||
-        `Failed to connect to backend at ${API_BASE_URL}. Please ensure the backend is running.`,
-      { cause: error }
-    );
   }
+
+  throw new Error(
+    lastError?.message ||
+      "Failed to connect to backend server. Please verify backend availability.",
+    { cause: lastError }
+  );
 }
 
 // System Health Check
