@@ -8,6 +8,7 @@ import {
   startBooking,
   completeBooking,
   cancelBooking,
+  getStoredVerification,
 } from "./api";
 import "./App.css";
 
@@ -183,6 +184,15 @@ function Worker() {
           </button>
 
           <button
+            className="secondary-btn"
+            onClick={() =>
+              navigate(`/worker/verification?worker_id=${worker?.worker_id || workerId}`)
+            }
+          >
+            🛡️ e-Shram Verification
+          </button>
+
+          <button
             className="primary-btn"
             onClick={() =>
               navigate("/worker-profile", {
@@ -197,15 +207,55 @@ function Worker() {
 
       <main className="worker-dashboard">
         <div className="worker-welcome">
-          <span className="section-label">WORKER DASHBOARD</span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+            <div>
+              <span className="section-label">WORKER DASHBOARD</span>
+              <h1>
+                Welcome back, <span>{worker?.name || "Worker"}.</span>
+              </h1>
+            </div>
 
-          <h1>
-            Welcome back, <span>{worker?.name || "Worker"}.</span>
-          </h1>
+            {/* Verified Worker Badge / Verification Link */}
+            {worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED" ? (
+              <div
+                style={{
+                  background: "#d1fae5",
+                  color: "#065f46",
+                  padding: "8px 16px",
+                  borderRadius: "999px",
+                  fontWeight: 700,
+                  fontSize: "14px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  border: "1px solid #a7f3d0",
+                  cursor: "pointer",
+                }}
+                onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
+                title="Click to view e-Shram Digital Certificate"
+              >
+                <span>✓</span> Verified Worker · e-Shram Validated
+              </div>
+            ) : (
+              <button
+                className="secondary-btn"
+                style={{
+                  background: "#fef3c7",
+                  borderColor: "#fde68a",
+                  color: "#92400e",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  padding: "8px 16px",
+                }}
+                onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
+              >
+                🛡️ Verify with e-Shram (Demo) →
+              </button>
+            )}
+          </div>
 
           <p>
-            Manage your availability, profile, and active bookings from one
-            place.
+            Manage your availability, profile, and active bookings from one place.
           </p>
 
           <div

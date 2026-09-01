@@ -5,6 +5,8 @@ import Customer from "./Customer";
 import Login from "./Login";
 import Workers from "./Workers";
 import WorkerProfile from "./WorkerProfile";
+import WorkerVerification from "./WorkerVerification";
+import AdminDashboard from "./AdminDashboard";
 import Booking from "./Booking";
 import MyBookings from "./MyBookings";
 
@@ -500,8 +502,53 @@ function App() {
         />
 
         <Route
+          path="/worker/verification"
+          element={<WorkerVerification />}
+        />
+
+        <Route
+          path="/worker-verification"
+          element={<WorkerVerification />}
+        />
+
+        <Route
           path="/worker-profile"
           element={<WorkerProfile />}
+        />
+
+        <Route
+          path="/worker/profile"
+          element={<WorkerProfile />}
+        />
+
+        <Route
+          path="/admin"
+          element={<AdminDashboard />}
+        />
+
+        <Route
+          path="/admin/workers"
+          element={<AdminDashboard />}
+        />
+
+        <Route
+          path="/admin/verifications"
+          element={<AdminDashboard />}
+        />
+
+        <Route
+          path="/admin/bookings"
+          element={<AdminDashboard />}
+        />
+
+        <Route
+          path="/admin/services"
+          element={<AdminDashboard />}
+        />
+
+        <Route
+          path="/admin/reviews"
+          element={<AdminDashboard />}
         />
 
         <Route

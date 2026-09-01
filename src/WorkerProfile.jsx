@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { getWorker, updateWorkerAvailability } from "./api";
+import { getWorker, updateWorkerAvailability, getStoredVerification } from "./api";
 import "./App.css";
 
 function WorkerProfile() {
@@ -94,11 +94,50 @@ function WorkerProfile() {
 
       <main className="worker-dashboard">
         <div className="worker-welcome">
-          <span className="section-label">WORKER PROFILE</span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+            <div>
+              <span className="section-label">WORKER PROFILE</span>
+              <h1>
+                Your professional <span>profile.</span>
+              </h1>
+            </div>
 
-          <h1>
-            Your professional <span>profile.</span>
-          </h1>
+            {worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED" ? (
+              <div
+                style={{
+                  background: "#d1fae5",
+                  color: "#065f46",
+                  padding: "8px 18px",
+                  borderRadius: "999px",
+                  fontWeight: 700,
+                  fontSize: "14px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  border: "1px solid #a7f3d0",
+                  cursor: "pointer",
+                }}
+                onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
+              >
+                <span>✓</span> Verified Worker (e-Shram Validated)
+              </div>
+            ) : (
+              <button
+                className="secondary-btn"
+                style={{
+                  background: "#fef3c7",
+                  borderColor: "#fde68a",
+                  color: "#92400e",
+                  fontWeight: 700,
+                  fontSize: "13px",
+                  padding: "8px 16px",
+                }}
+                onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
+              >
+                🛡️ Verify with e-Shram (Demo) →
+              </button>
+            )}
+          </div>
           <p>
             Connected to Worker ID #{workerId} in Sahāyu Cooperative Database.
           </p>
@@ -267,10 +306,19 @@ function WorkerProfile() {
                 choose you with confidence.
               </p>
 
-              <div className="profile-tip">
-                {worker?.is_verified
-                  ? "✓ Verified Worker Badge Active"
-                  : "✓ Connect with cooperative admin for verification"}
+              <div
+                className="profile-tip"
+                style={{
+                  background: worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED" ? "#ecfdf5" : "#fffbeb",
+                  borderColor: worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED" ? "#10b981" : "#f59e0b",
+                  color: worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED" ? "#065f46" : "#92400e",
+                  cursor: "pointer",
+                }}
+                onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
+              >
+                {worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED"
+                  ? "✓ Verified Worker Badge Active · Click to view e-Shram Card"
+                  : "🛡️ e-Shram Verification Pending · Click to Verify (Demo)"}
               </div>
 
               {worker?.average_rating !== undefined &&

@@ -57,7 +57,27 @@ function Login() {
             <div>
               <h2>I'm a Worker</h2>
               <p>
-                Find local opportunities and grow your work.
+                Find local opportunities, verify e-Shram, and grow your work.
+              </p>
+            </div>
+
+            <span className="role-arrow">
+              →
+            </span>
+          </button>
+
+          <button
+            className="role-card admin-role-card"
+            onClick={() => navigate("/admin")}
+          >
+            <div className="role-icon">
+              🏛️
+            </div>
+
+            <div>
+              <h2>Cooperative Admin Desk</h2>
+              <p>
+                Manage worker verifications, gig analytics & platform oversight.
               </p>
             </div>
 
@@ -67,7 +87,6 @@ function Login() {
           </button>
 
         </div>
-
 
         <button
           className="back-home-btn"

@@ -117,6 +117,16 @@ export const getHealth = () => request("/health");
 // Services & Skills API
 export const getServices = () => request("/services");
 export const getService = (serviceId) => request(`/services/${serviceId}`);
+export const createService = ({ service, description, base_price, skill_id }) =>
+  request("/services", {
+    method: "POST",
+    body: JSON.stringify({
+      service: String(service),
+      description: String(description || ""),
+      base_price: Number(base_price),
+      skill_id: Number(skill_id),
+    }),
+  });
 export const getSkills = () => request("/skills");
 
 // Workers API
@@ -147,6 +157,12 @@ export const updateWorkerAvailability = (workerId, isAvailable) =>
   request(`/workers/${workerId}/availability`, {
     method: "PATCH",
     body: JSON.stringify({ is_available: Boolean(isAvailable) }),
+  });
+
+export const updateWorkerProfile = (workerId, updateData) =>
+  request(`/workers/${workerId}`, {
+    method: "PATCH",
+    body: JSON.stringify(updateData),
   });
 
 // Customer API
@@ -186,8 +202,19 @@ export const createBooking = ({
 
 export const getBooking = (bookingId) => request(`/bookings/${bookingId}`);
 
+export const getCustomerBookings = (customerId = 1) =>
+  request(`/bookings/customer/${customerId}`);
+
+export const getWorkerBookings = (workerId) =>
+  request(`/bookings/worker/${workerId}`);
+
 export const acceptBooking = (bookingId) =>
   request(`/bookings/${bookingId}/accept`, {
+    method: "PATCH",
+  });
+
+export const rejectBooking = (bookingId) =>
+  request(`/bookings/${bookingId}/reject`, {
     method: "PATCH",
   });
 
@@ -220,3 +247,37 @@ export const createReview = ({ booking_id, customer_id, rating, review }) =>
       review: String(review || ""),
     }),
   });
+
+// Verification State Management (Demo SIH Prototype Sync)
+export const getStoredVerification = (workerId) => {
+  try {
+    const raw = localStorage.getItem(`sahayu_verification_${workerId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const setStoredVerification = (workerId, data) => {
+  try {
+    localStorage.setItem(`sahayu_verification_${workerId}`, JSON.stringify(data));
+  } catch {
+    // Ignore localStorage errors
+  }
+};
+
+export const getAllStoredVerifications = () => {
+  try {
+    const result = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith("sahayu_verification_")) {
+        const id = key.replace("sahayu_verification_", "");
+        result[id] = JSON.parse(localStorage.getItem(key) || "{}");
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+};

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
-import { getRecommendedWorkers } from "./api";
+import { getRecommendedWorkers, getStoredVerification } from "./api";
 import ServiceMap from "./ServiceMap";
 import "./App.css";
 
@@ -288,8 +288,8 @@ function Workers() {
                     <div className="worker-name-row">
                       <h2>{worker.name}</h2>
 
-                      {worker.is_verified && (
-                        <span className="verified-badge">✓ VERIFIED</span>
+                      {(worker.is_verified || getStoredVerification(worker.worker_id)?.status === "VERIFIED") && (
+                        <span className="verified-badge">✓ VERIFIED WORKER</span>
                       )}
 
                       {worker.is_available !== false ? (
