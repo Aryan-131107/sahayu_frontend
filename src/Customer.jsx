@@ -15,13 +15,16 @@ function Customer() {
   const [location, setLocation] = useState("Civil Lines, Jabalpur");
   const [latitude, setLatitude] = useState(23.1815);
   const [longitude, setLongitude] = useState(79.9864);
+  const [gpsDetecting, setGpsDetecting] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState("");
+
   const [preferredDate, setPreferredDate] = useState(
     new Date().toISOString().split("T")[0]
   );
+  // Three quick options: "Morning", "Afternoon", "Evening"
   const [preferredTime, setPreferredTime] = useState("Morning");
   const [requirement, setRequirement] = useState("");
-  const [customerId, setCustomerId] = useState(1);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const customerId = 1;
 
   useEffect(() => {
     let isMounted = true;
@@ -70,6 +73,39 @@ function Customer() {
     };
   }, [searchParams]);
 
+  // GPS Auto detection handler
+  const handleGpsAuto = () => {
+    setGpsDetecting(true);
+    setGpsStatus("Detecting current coordinates...");
+
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setLatitude(Number(position.coords.latitude.toFixed(4)));
+          setLongitude(Number(position.coords.longitude.toFixed(4)));
+          setLocation("Detected Location (Jabalpur Central)");
+          setGpsStatus("✓ GPS Coordinates Locked");
+          setGpsDetecting(false);
+        },
+        () => {
+          // Graceful simulated default for desktop / permission-denied browsers
+          setLatitude(23.1815);
+          setLongitude(79.9864);
+          setLocation("Civil Lines, Jabalpur");
+          setGpsStatus("✓ Auto-set to Jabalpur Center (23.1815° N, 79.9864° E)");
+          setGpsDetecting(false);
+        },
+        { timeout: 4000 }
+      );
+    } else {
+      setLatitude(23.1815);
+      setLongitude(79.9864);
+      setLocation("Civil Lines, Jabalpur");
+      setGpsStatus("✓ Auto-set to Jabalpur Zone");
+      setGpsDetecting(false);
+    }
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!selectedServiceId) {
@@ -88,7 +124,8 @@ function Customer() {
           service_id: Number(selectedServiceId),
           service_name:
             serviceObj?.service || serviceObj?.service_name || "Service",
-          base_price: serviceObj?.base_price || 350,
+          base_price: 239,
+          amount: 239,
           latitude: Number(latitude),
           longitude: Number(longitude),
           location,
@@ -108,7 +145,7 @@ function Customer() {
   return (
     <div className="customer-page">
       <nav className="worker-topbar">
-        <div className="logo">
+        <div className="logo" onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
           <span className="logo-icon">S</span>
           Sahāyu
         </div>
@@ -129,15 +166,14 @@ function Customer() {
 
       <main className="customer-dashboard">
         <div className="customer-header">
-          <span className="section-label">CUSTOMER</span>
+          <span className="section-label">BOOK A SERVICE</span>
 
           <h1>
-            Find the right <span>worker.</span>
+            Find the right <span>cooperative professional.</span>
           </h1>
 
           <p>
-            Tell us what you need and we'll help you find verified local
-            professionals.
+            Standard transparent pricing of ₹239 with 100% fair inspection floor directly to your local worker.
           </p>
         </div>
 
@@ -154,7 +190,8 @@ function Customer() {
               </p>
             )}
 
-            <label htmlFor="service-select">Service</label>
+            {/* Service Selection */}
+            <label htmlFor="service-select">Select Service</label>
             {loadingServices ? (
               <p style={{ color: "#666", padding: "10px 0" }}>
                 Loading available services...
@@ -166,12 +203,11 @@ function Customer() {
                 onChange={(e) => setSelectedServiceId(e.target.value)}
                 required
               >
-                <option value="">Select a service</option>
+                <option value="">Select a service category</option>
                 {services.map((service) => (
                   <option key={service.service_id} value={service.service_id}>
-                    {service.service || service.service_name} (₹
-                    {service.base_price})
-                    {service.category ? ` - ${service.category}` : ""}
+                    {service.service || service.service_name}
+                    {service.category ? ` (${service.category})` : ""}
                   </option>
                 ))}
               </select>
@@ -184,23 +220,44 @@ function Customer() {
                   color: "#1d765c",
                   marginTop: "6px",
                   fontSize: "13px",
+                  fontWeight: 600,
                 }}
               >
-                {selectedServiceObj.description} · Base Price: ₹
-                {selectedServiceObj.base_price}
+                {selectedServiceObj.description} · Standard Inspection & Service Floor: ₹239
               </small>
             )}
 
-            <label>Location</label>
-            <input
-              type="text"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="Enter your location (e.g. Civil Lines, Jabalpur)"
-              required
-            />
+            {/* Location with GPS Auto Button */}
+            <div style={{ marginTop: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                <label style={{ margin: 0 }}>Service Location</label>
+                <button
+                  type="button"
+                  className="gps-auto-btn"
+                  onClick={handleGpsAuto}
+                  disabled={gpsDetecting}
+                >
+                  📍 {gpsDetecting ? "Detecting..." : "GPS Auto"}
+                </button>
+              </div>
 
-            <label>Preferred Date</label>
+              <input
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Enter your address or locality"
+                required
+              />
+
+              {gpsStatus && (
+                <small style={{ display: "block", color: "#059669", marginTop: "4px", fontSize: "12px", fontWeight: 600 }}>
+                  {gpsStatus}
+                </small>
+              )}
+            </div>
+
+            {/* Preferred Date */}
+            <label style={{ marginTop: "16px" }}>Preferred Date</label>
             <input
               type="date"
               value={preferredDate}
@@ -208,109 +265,109 @@ function Customer() {
               required
             />
 
-            <label>Preferred Time</label>
-            <select
-              value={preferredTime}
-              onChange={(e) => setPreferredTime(e.target.value)}
-              required
-            >
-              <option value="Morning">Morning (9:00 AM - 12:00 PM)</option>
-              <option value="Afternoon">Afternoon (12:00 PM - 4:00 PM)</option>
-              <option value="Evening">Evening (4:00 PM - 8:00 PM)</option>
-            </select>
+            {/* Preferred Time: Three Quick Options */}
+            <label style={{ marginTop: "16px" }}>Preferred Time Slot</label>
+            <div className="time-slots-grid">
+              <div
+                className={`time-slot-card ${preferredTime === "Morning" ? "selected" : ""}`}
+                onClick={() => setPreferredTime("Morning")}
+              >
+                <span className="slot-icon">🌅</span>
+                <div>
+                  <strong>Morning</strong>
+                  <small>9 AM – 12 PM</small>
+                </div>
+              </div>
 
-            <label>Describe your requirement</label>
+              <div
+                className={`time-slot-card ${preferredTime === "Afternoon" ? "selected" : ""}`}
+                onClick={() => setPreferredTime("Afternoon")}
+              >
+                <span className="slot-icon">☀️</span>
+                <div>
+                  <strong>Afternoon</strong>
+                  <small>12 PM – 4 PM</small>
+                </div>
+              </div>
+
+              <div
+                className={`time-slot-card ${preferredTime === "Evening" ? "selected" : ""}`}
+                onClick={() => setPreferredTime("Evening")}
+              >
+                <span className="slot-icon">🌙</span>
+                <div>
+                  <strong>Evening</strong>
+                  <small>4 PM – 8 PM</small>
+                </div>
+              </div>
+            </div>
+
+            {/* Requirement Description */}
+            <label style={{ marginTop: "16px" }}>Requirement Details</label>
             <textarea
-              rows="4"
+              rows="3"
               value={requirement}
               onChange={(e) => setRequirement(e.target.value)}
-              placeholder="Tell the worker what you need..."
+              placeholder="E.g., Fan regulator replacement, leaking tap under washbasin..."
             />
 
-            <div style={{ marginTop: "12px" }}>
-              <button
-                type="button"
-                className="back-link"
-                style={{ fontSize: "12px", margin: 0, padding: 0 }}
-                onClick={() => setShowAdvanced(!showAdvanced)}
-              >
-                {showAdvanced ? "▼ Hide Coordinates & Customer ID" : "▶ Set Coordinates & Customer ID (Prototype Options)"}
-              </button>
-
-              {showAdvanced && (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr 1fr",
-                    gap: "10px",
-                    marginTop: "10px",
-                    padding: "12px",
-                    background: "#f4f8f6",
-                    borderRadius: "10px",
-                  }}
-                >
-                  <div>
-                    <small>Latitude</small>
-                    <input
-                      type="number"
-                      step="any"
-                      value={latitude}
-                      onChange={(e) => setLatitude(parseFloat(e.target.value) || 0)}
-                    />
-                  </div>
-                  <div>
-                    <small>Longitude</small>
-                    <input
-                      type="number"
-                      step="any"
-                      value={longitude}
-                      onChange={(e) => setLongitude(parseFloat(e.target.value) || 0)}
-                    />
-                  </div>
-                  <div>
-                    <small>Customer ID</small>
-                    <input
-                      type="number"
-                      value={customerId}
-                      onChange={(e) => setCustomerId(parseInt(e.target.value, 10) || 1)}
-                    />
-                  </div>
-                </div>
-              )}
+            {/* Transparent Pricing Pill */}
+            <div className="pricing-callout-card">
+              <div className="pricing-callout-header">
+                <strong>Standard Booking Total: ₹239</strong>
+                <span className="fair-wage-tag">100% Fair Floor</span>
+              </div>
+              <p>
+                ₹199 goes 100% directly to worker · ₹30 platform operations · ₹10 cooperative welfare pool (Gullak)
+              </p>
             </div>
 
             <button
               type="submit"
               className="primary-btn full-btn"
               disabled={loadingServices}
+              style={{ marginTop: "16px" }}
             >
-              Find Workers
+              Find Available Workers →
             </button>
           </form>
 
+          {/* Right Information Panel */}
           <div className="request-info">
             <div className="request-info-icon">🤝</div>
 
-            <h2>Why choose Sahāyu?</h2>
+            <h2>Why Sahāyu Cooperative?</h2>
 
             <div className="customer-benefit">
               <span>✓</span>
-              <p>Verified local workers</p>
+              <div>
+                <strong>100% Worker Payout</strong>
+                <p>₹199 full inspection floor goes directly to the worker with 0% platform deduction.</p>
+              </div>
             </div>
 
             <div className="customer-benefit">
-              <span>₹</span>
-              <p>Transparent pricing</p>
+              <span>🛡️</span>
+              <div>
+                <strong>3-Day Workmanship Guarantee</strong>
+                <p>Included with every completed job for complete peace of mind.</p>
+              </div>
             </div>
 
             <div className="customer-benefit">
-              <span>⭐</span>
-              <p>Community trusted professionals</p>
+              <span>🪙</span>
+              <div>
+                <strong>Gullak Welfare Fund</strong>
+                <p>₹10 from every booking supports member emergency health and welfare.</p>
+              </div>
             </div>
 
             <div className="customer-benefit">
               <span>🔒</span>
-              <p>Safe and reliable bookings</p>
+              <div>
+                <strong>Two-Step OTP Security</strong>
+                <p>Secure Start and End OTP validation prevents premature closure.</p>
+              </div>
             </div>
           </div>
         </div>

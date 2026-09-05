@@ -3650,4 +3650,853 @@ footer > p {
 .admin-role-card:hover {
   border-color: #10b981 !important;
 }
+
+/* ==================================================
+   NEW SAHAYU PRICING & PROTOTYPE UI STYLES
+================================================== */
+
+/* GPS Auto Button */
+.gps-auto-btn {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.gps-auto-btn:hover {
+  background: #d1fae5;
+  border-color: #6ee7b7;
+}
+
+/* Time Slot Selection Cards */
+.time-slots-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.time-slot-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.time-slot-card:hover {
+  border-color: #10b981;
+  background: #f0fdf4;
+}
+
+.time-slot-card.selected {
+  border-color: #059669;
+  background: #ecfdf5;
+  box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.2);
+}
+
+.time-slot-card .slot-icon {
+  font-size: 22px;
+}
+
+.time-slot-card strong {
+  display: block;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.time-slot-card small {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+}
+
+/* Pricing Callout Card */
+.pricing-callout-card {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-left: 4px solid #059669;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-top: 16px;
+}
+
+.pricing-callout-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.pricing-callout-header strong {
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.fair-wage-tag {
+  background: #dcfce7;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid #bbf7d0;
+}
+
+.pricing-callout-card p {
+  font-size: 12px;
+  color: #475569;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Invoice Preview Box */
+.invoice-preview-box {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px;
+  margin: 20px 0;
+}
+
+.invoice-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.invoice-preview-header h4 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.view-invoice-link {
+  background: none;
+  border: none;
+  color: #059669;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.view-invoice-link:hover {
+  text-decoration: underline;
+}
+
+.invoice-line-items {
+  border-top: 1px dashed #cbd5e1;
+  border-bottom: 1px dashed #cbd5e1;
+  padding: 12px 0;
+}
+
+.invoice-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: #334155;
+  margin-bottom: 8px;
+}
+
+.invoice-row.total-row {
+  margin-top: 10px;
+  margin-bottom: 0;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.total-highlight {
+  font-size: 20px;
+  color: #059669;
+}
+
+.guarantee-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.guarantee-badge-row span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #065f46;
+  background: #ecfdf5;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid #a7f3d0;
+}
+
+/* Invoice Modal Box */
+.invoice-modal-box {
+  max-width: 520px;
+  width: 90%;
+  border-radius: 18px;
+}
+
+.invoice-brand-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.invoice-id-tag {
+  font-size: 11px;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.invoice-recipient-info {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  background: #f8fafc;
+  padding: 12px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.invoice-recipient-info small {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.invoice-recipient-info strong,
+.invoice-recipient-info span {
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.invoice-table-styled {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.inv-table-header {
+  display: flex;
+  justify-content: space-between;
+  background: #f1f5f9;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.inv-table-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-top: 1px solid #f1f5f9;
+  font-size: 13px;
+}
+
+.inv-table-row small {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.inv-table-row.inv-total-row {
+  background: #ecfdf5;
+  border-top: 2px solid #059669;
+  font-size: 15px;
+  font-weight: 700;
+  color: #065f46;
+}
+
+.inv-total-val {
+  font-size: 18px;
+  color: #059669;
+}
+
+.invoice-guarantee-box {
+  display: flex;
+  gap: 12px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.invoice-guarantee-box .guarantee-icon {
+  font-size: 24px;
+}
+
+.invoice-guarantee-box strong {
+  display: block;
+  font-size: 13px;
+  color: #065f46;
+}
+
+.invoice-guarantee-box p {
+  font-size: 12px;
+  color: #047857;
+  margin: 2px 0 0 0;
+}
+
+/* OTP Cards Container */
+.otp-security-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.otp-card {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 18px;
+  border: 1.5px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.otp-card.start-otp-card {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.otp-card.end-otp-card {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.otp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.otp-header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.otp-badge {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+}
+
+.otp-badge.start {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.otp-badge.end {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+.otp-display-box {
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: 6px;
+  text-align: center;
+  padding: 10px 0;
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1.5px dashed #cbd5e1;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+
+.otp-instruction {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  margin: 0 0 4px 0;
+  line-height: 1.4;
+}
+
+.otp-sub-note {
+  font-size: 11px;
+  color: #64748b;
+  display: block;
+}
+
+/* 3-Day Workmanship Guarantee Cards */
+.warranty-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-radius: 14px;
+  margin: 20px 0;
+}
+
+.warranty-card.active-warranty {
+  background: #ecfdf5;
+  border: 1.5px solid #10b981;
+}
+
+.warranty-card.pending-warranty {
+  background: #f8fafc;
+  border: 1.5px dashed #cbd5e1;
+}
+
+.warranty-icon-badge {
+  font-size: 32px;
+}
+
+.warranty-info {
+  flex: 1;
+}
+
+.warranty-info h3,
+.warranty-info h4 {
+  margin: 0 0 4px 0;
+  color: #065f46;
+}
+
+.warranty-info p {
+  margin: 0;
+  font-size: 13px;
+  color: #047857;
+}
+
+.warranty-info small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #065f46;
+}
+
+.guarantee-status-tag {
+  background: #059669;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 6px 12px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+}
+
+.guarantee-status-tag.pending {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+/* Worker Trust Section */
+.worker-trust-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.trust-layer-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.trust-layer-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.trust-layer-header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: #0f172a;
+  flex: 1;
+}
+
+.trust-indicator-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.trust-indicator-dot.verified {
+  background: #10b981;
+  box-shadow: 0 0 0 3px #d1fae5;
+}
+
+.trust-layer-card p {
+  font-size: 12px;
+  color: #475569;
+  margin: 0 0 12px 0;
+  line-height: 1.4;
+}
+
+.trust-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 10px;
+}
+
+.trust-card-footer small {
+  font-size: 11px;
+  color: #64748b;
+  font-family: monospace;
+}
+
+.text-link-btn {
+  background: none;
+  border: none;
+  color: #059669;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.text-link-btn:hover {
+  text-decoration: underline;
+}
+
+.certified-tag {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #bfdbfe;
+}
+
+.member-id-pill {
+  background: #dbeafe;
+  color: #1e40af;
+  font-size: 15px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid #93c5fd;
+  display: inline-block;
+}
+
+/* Worker Earnings Grid */
+.worker-earnings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.worker-stat-card.highlight-earning {
+  background: #ecfdf5;
+  border: 1.5px solid #a7f3d0;
+}
+
+.worker-stat-card.gullak-card {
+  background: #fffbeb;
+  border: 1.5px solid #fde68a;
+}
+
+.payout-pill {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #065f46;
+  margin-top: 4px;
+}
+
+.gullak-pill {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #92400e;
+  margin-top: 4px;
+}
+
+/* Active Job Card on Worker Desk */
+.active-job-card {
+  background: #ffffff;
+  border: 2px solid #059669;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.08);
+  margin-top: 15px;
+}
+
+.job-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.job-tag {
+  background: #dcfce7;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+
+.job-card-header h3 {
+  margin: 6px 0 4px 0;
+  font-size: 20px;
+  color: #0f172a;
+}
+
+.job-customer-info {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.job-payout-box {
+  margin-top: 6px;
+  text-align: right;
+}
+
+.job-payout-box small {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.job-payout-box strong {
+  font-size: 16px;
+  color: #059669;
+}
+
+.job-step-action-box {
+  background: #f8fafc;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 18px;
+}
+
+.otp-action-header strong {
+  display: block;
+  font-size: 14px;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
+.otp-action-header p {
+  margin: 0 0 12px 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.otp-inline-form {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.otp-input {
+  max-width: 280px;
+  font-size: 16px;
+  letter-spacing: 2px;
+  font-weight: 700;
+}
+
+.completed-box {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+.completed-check-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #059669;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+/* Gullak Banner & Allocations */
+.gullak-banner-card {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1.5px solid #fde68a;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.gullak-banner-icon {
+  font-size: 48px;
+}
+
+.gullak-banner-card h3 {
+  margin: 0 0 6px 0;
+  font-size: 24px;
+  color: #92400e;
+}
+
+.gullak-banner-card p {
+  margin: 0;
+  font-size: 13px;
+  color: #78350f;
+  max-width: 600px;
+}
+
+.gullak-active-pill {
+  background: #059669;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 6px 14px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.gullak-allocations-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.gullak-alloc-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.alloc-icon {
+  font-size: 32px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.gullak-alloc-card h4 {
+  margin: 0 0 6px 0;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.gullak-alloc-card p {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0 0 14px 0;
+  line-height: 1.4;
+}
+
+.gullak-alloc-card strong {
+  font-size: 16px;
+  color: #059669;
+  display: block;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 10px;
+}
+
+.price-breakdown-sub {
+  display: block;
+  font-size: 10px;
+  color: #059669;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+/* Payment Status Pills */
+.payment-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.payment-pill.paid {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.payment-pill.pending {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+/* Timeline 4 Steps */
+.timeline-steps-grid.four-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.step-tag-name {
+  font-size: 9px;
+  font-weight: 800;
+  color: #64748b;
+  letter-spacing: 0.5px;
+  display: block;
+  margin-bottom: 2px;
+}
+
+/* Responsive Overrides */
+@media (max-width: 900px) {
+  .time-slots-grid,
+  .otp-security-container,
+  .worker-trust-section,
+  .worker-earnings-grid,
+  .gullak-allocations-grid,
+  .timeline-steps-grid.four-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .invoice-recipient-info {
+    grid-template-columns: 1fr;
+  }
+
+  .gullak-banner-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 

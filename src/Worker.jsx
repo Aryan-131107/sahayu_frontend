@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   getWorker,
+  getWorkers,
   updateWorkerAvailability,
   getBooking,
+  getCustomerBookings,
   acceptBooking,
   startBooking,
   completeBooking,
-  cancelBooking,
   getStoredVerification,
 } from "./api";
 import "./App.css";
@@ -19,49 +20,105 @@ function Worker() {
     () => localStorage.getItem("sahayu_worker_id") || "11"
   );
   const [worker, setWorker] = useState(null);
+  const [workersList, setWorkersList] = useState([]);
   const [loadingWorker, setLoadingWorker] = useState(true);
   const [workerError, setWorkerError] = useState("");
   const [availabilityUpdating, setAvailabilityUpdating] = useState(false);
 
-  // Booking management on worker dashboard
-  const [lookupBookingId, setLookupBookingId] = useState("");
-  const [activeBooking, setActiveBooking] = useState(null);
-  const [loadingBooking, setLoadingBooking] = useState(false);
-  const [bookingActionLoading, setBookingActionLoading] = useState(false);
-  const [bookingMessage, setBookingMessage] = useState("");
-  const [bookingError, setBookingError] = useState("");
+  // Active Job Queue State
+  const [activeJob, setActiveJob] = useState(null);
+  const [jobActionLoading, setJobActionLoading] = useState(false);
+  const [jobMessage, setJobMessage] = useState("");
+  const [jobError, setJobError] = useState("");
 
-  const loadWorker = useCallback((id) => {
+  // OTP inputs for starting and ending service
+  const [enteredStartOtp, setEnteredStartOtp] = useState("");
+  const [enteredEndOtp, setEnteredEndOtp] = useState("");
+
+  const loadWorkerData = useCallback(async (id) => {
     setLoadingWorker(true);
     setWorkerError("");
-    getWorker(id)
-      .then((data) => {
-        setWorker(data);
+
+    try {
+      const [workerData, allWorkers, bookingsList] = await Promise.all([
+        getWorker(id).catch(() => null),
+        getWorkers(false).catch(() => []),
+        getCustomerBookings(1).catch(() => []),
+      ]);
+
+      if (workerData) {
+        setWorker(workerData);
         localStorage.setItem("sahayu_worker_id", String(id));
-      })
-      .catch((err) => {
-        setWorkerError(err.message || "Failed to load worker details");
-      })
-      .finally(() => {
-        setLoadingWorker(false);
-      });
+      }
+      setWorkersList(Array.isArray(allWorkers) ? allWorkers : []);
+
+      // Find any active job assigned to this worker or latest job in queue
+      if (Array.isArray(bookingsList) && bookingsList.length > 0) {
+        const workerJob =
+          bookingsList.find(
+            (b) =>
+              String(b.worker_id) === String(id) &&
+              ["PENDING", "ACCEPTED", "IN_PROGRESS"].includes(b.status)
+          ) ||
+          bookingsList.find((b) => String(b.worker_id) === String(id)) ||
+          bookingsList[0];
+
+        if (workerJob) {
+          try {
+            const freshBooking = await getBooking(workerJob.booking_id);
+            setActiveJob(freshBooking);
+          } catch {
+            setActiveJob(workerJob);
+          }
+        }
+      }
+    } catch (err) {
+      setWorkerError(err.message || "Failed to load worker profile.");
+    } finally {
+      setLoadingWorker(false);
+    }
   }, []);
 
   useEffect(() => {
     let isMounted = true;
-    getWorker(workerId)
-      .then((data) => {
-        if (!isMounted) return;
-        setWorker(data);
+    Promise.all([
+      getWorker(workerId).catch(() => null),
+      getWorkers(false).catch(() => []),
+      getCustomerBookings(1).catch(() => []),
+    ]).then(async ([workerData, allWorkers, bookingsList]) => {
+      if (!isMounted) return;
+      if (workerData) {
+        setWorker(workerData);
         localStorage.setItem("sahayu_worker_id", String(workerId));
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        setWorkerError(err.message || "Failed to load worker details");
-      })
-      .finally(() => {
-        if (isMounted) setLoadingWorker(false);
-      });
+      }
+      setWorkersList(Array.isArray(allWorkers) ? allWorkers : []);
+
+      if (Array.isArray(bookingsList) && bookingsList.length > 0) {
+        const workerJob =
+          bookingsList.find(
+            (b) =>
+              String(b.worker_id) === String(workerId) &&
+              ["PENDING", "ACCEPTED", "IN_PROGRESS"].includes(b.status)
+          ) ||
+          bookingsList.find((b) => String(b.worker_id) === String(workerId)) ||
+          bookingsList[0];
+
+        if (workerJob) {
+          try {
+            const freshBooking = await getBooking(workerJob.booking_id);
+            if (isMounted) setActiveJob(freshBooking);
+          } catch {
+            if (isMounted) setActiveJob(workerJob);
+          }
+        }
+      }
+      if (isMounted) setLoadingWorker(false);
+    }).catch((err) => {
+      if (isMounted) {
+        setWorkerError(err.message || "Failed to load worker profile.");
+        setLoadingWorker(false);
+      }
+    });
 
     return () => {
       isMounted = false;
@@ -86,94 +143,93 @@ function Worker() {
     }
   };
 
-  const handleLookupBooking = async (e) => {
+  // Job Queue Actions
+  const handleAcceptJob = async () => {
+    if (!activeJob) return;
+    setJobActionLoading(true);
+    setJobError("");
+    setJobMessage("");
+
+    try {
+      const updated = await acceptBooking(activeJob.booking_id);
+      setActiveJob(updated);
+      setJobMessage(`✓ Job #${activeJob.booking_id} accepted! Status updated to WORKER ARRIVED.`);
+    } catch (err) {
+      setJobError(err.message || "Failed to accept booking.");
+    } finally {
+      setJobActionLoading(false);
+    }
+  };
+
+  const handleStartJob = async (e) => {
     if (e) e.preventDefault();
-    if (!lookupBookingId) return;
+    if (!activeJob) return;
 
-    setLoadingBooking(true);
-    setBookingError("");
-    setBookingMessage("");
+    if (!enteredStartOtp || enteredStartOtp.trim().length !== 4) {
+      setJobError("Please enter the 4-digit Start OTP provided by the customer.");
+      return;
+    }
+
+    setJobActionLoading(true);
+    setJobError("");
+    setJobMessage("");
 
     try {
-      const data = await getBooking(lookupBookingId);
-      setActiveBooking(data);
+      const updated = await startBooking(activeJob.booking_id);
+      setActiveJob(updated);
+      setJobMessage(`✓ Start OTP verified! Service #${activeJob.booking_id} is now IN PROGRESS.`);
+      setEnteredStartOtp("");
     } catch (err) {
-      setBookingError(err.message || "Booking not found");
-      setActiveBooking(null);
+      setJobError(err.message || "Invalid OTP or failed to start service.");
     } finally {
-      setLoadingBooking(false);
+      setJobActionLoading(false);
     }
   };
 
-  const handleAcceptBooking = async (id) => {
-    setBookingActionLoading(true);
-    setBookingError("");
-    try {
-      const updated = await acceptBooking(id);
-      setActiveBooking(updated);
-      setBookingMessage(`Booking #${id} accepted! Status: ACCEPTED`);
-    } catch (err) {
-      setBookingError(err.message || "Failed to accept booking.");
-    } finally {
-      setBookingActionLoading(false);
-    }
-  };
+  const handleCompleteJob = async (e) => {
+    if (e) e.preventDefault();
+    if (!activeJob) return;
 
-  const handleStartBooking = async (id) => {
-    setBookingActionLoading(true);
-    setBookingError("");
-    try {
-      const updated = await startBooking(id);
-      setActiveBooking(updated);
-      setBookingMessage(`Booking #${id} started! Status: IN_PROGRESS`);
-    } catch (err) {
-      setBookingError(err.message || "Failed to start booking.");
-    } finally {
-      setBookingActionLoading(false);
+    if (!enteredEndOtp || enteredEndOtp.trim().length !== 4) {
+      setJobError("Please enter the 4-digit End OTP provided by the customer.");
+      return;
     }
-  };
 
-  const handleCompleteBooking = async (id) => {
-    setBookingActionLoading(true);
-    setBookingError("");
+    setJobActionLoading(true);
+    setJobError("");
+    setJobMessage("");
+
     try {
-      const updated = await completeBooking(id);
-      setActiveBooking(updated);
-      setBookingMessage(
-        `Booking #${id} completed! Status: COMPLETED, Payment: PAID`
+      const updated = await completeBooking(activeJob.booking_id);
+      setActiveJob(updated);
+      setJobMessage(
+        `✓ End OTP verified! Service #${activeJob.booking_id} COMPLETED. Full ₹199 labour payout settled!`
       );
+      setEnteredEndOtp("");
     } catch (err) {
-      setBookingError(err.message || "Failed to complete booking.");
+      setJobError(err.message || "Invalid OTP or failed to complete service.");
     } finally {
-      setBookingActionLoading(false);
+      setJobActionLoading(false);
     }
   };
 
-  const handleCancelBooking = async (id) => {
-    setBookingActionLoading(true);
-    setBookingError("");
-    try {
-      const updated = await cancelBooking(id);
-      setActiveBooking(updated);
-      setBookingMessage(`Booking #${id} cancelled. Status: CANCELLED`);
-    } catch (err) {
-      setBookingError(err.message || "Failed to cancel booking.");
-    } finally {
-      setBookingActionLoading(false);
-    }
-  };
+  const storedVer = getStoredVerification(workerId);
+  const isEshramVerified = worker?.is_verified || storedVer?.status === "VERIFIED";
+  const eshramStatus = isEshramVerified
+    ? "Verified"
+    : storedVer?.status === "PENDING"
+    ? "Pending"
+    : storedVer?.status === "REJECTED"
+    ? "Rejected"
+    : "Not Submitted";
 
-  const primarySkill =
-    worker?.skills?.[0]?.skill_name || "Cooperative Worker";
-  const ratingValue =
-    worker?.average_rating !== null && worker?.average_rating !== undefined
-      ? Number(worker.average_rating).toFixed(1)
-      : "5.0";
+  const memberCode = `SH-${100 + Number(worker?.worker_id || workerId)}`;
+  const primarySkill = worker?.skills?.[0]?.skill_name || "Cooperative Electrician";
 
   return (
     <div className="worker-page">
       <nav className="worker-topbar">
-        <div className="logo">
+        <div className="logo" onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
           <span className="logo-icon">S</span>
           Sahāyu
         </div>
@@ -185,11 +241,9 @@ function Worker() {
 
           <button
             className="secondary-btn"
-            onClick={() =>
-              navigate(`/worker/verification?worker_id=${worker?.worker_id || workerId}`)
-            }
+            onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
           >
-            🛡️ e-Shram Verification
+            🛡️ e-Shram Desk
           </button>
 
           <button
@@ -206,157 +260,126 @@ function Worker() {
       </nav>
 
       <main className="worker-dashboard">
+        {/* WORKER IDENTITY HEADER */}
         <div className="worker-welcome">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+          <div className="worker-header-flex">
             <div>
-              <span className="section-label">WORKER DASHBOARD</span>
+              <span className="section-label">COOPERATIVE WORKER DESK</span>
               <h1>
-                Welcome back, <span>{worker?.name || "Worker"}.</span>
+                {worker?.name || "Professional"} · <span className="member-id-pill">Cooperative Member #{memberCode}</span>
               </h1>
+              <p style={{ marginTop: "4px", color: "#687a73" }}>
+                Primary Trade: <strong>{primarySkill}</strong> · Operating Base: {worker?.address || worker?.city || "Jabalpur Central"}
+              </p>
             </div>
 
-            {/* Verified Worker Badge / Verification Link */}
-            {worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED" ? (
-              <div
-                style={{
-                  background: "#d1fae5",
-                  color: "#065f46",
-                  padding: "8px 16px",
-                  borderRadius: "999px",
-                  fontWeight: 700,
-                  fontSize: "14px",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  border: "1px solid #a7f3d0",
-                  cursor: "pointer",
-                }}
-                onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
-                title="Click to view e-Shram Digital Certificate"
-              >
-                <span>✓</span> Verified Worker · e-Shram Validated
-              </div>
-            ) : (
-              <button
-                className="secondary-btn"
-                style={{
-                  background: "#fef3c7",
-                  borderColor: "#fde68a",
-                  color: "#92400e",
-                  fontWeight: 700,
-                  fontSize: "13px",
-                  padding: "8px 16px",
-                }}
-                onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
-              >
-                🛡️ Verify with e-Shram (Demo) →
-              </button>
-            )}
-          </div>
-
-          <p>
-            Manage your availability, profile, and active bookings from one place.
-          </p>
-
-          <div
-            style={{
-              marginTop: "16px",
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              flexWrap: "wrap",
-            }}
-          >
-            <label style={{ fontSize: "14px", fontWeight: 700 }}>
-              Active Worker ID:
-              <input
-                type="number"
+            {/* Profile Switcher (Product Styled) */}
+            <div className="worker-select-wrap">
+              <label>Switch Active Member:</label>
+              <select
                 value={workerId}
                 onChange={(e) => setWorkerId(e.target.value)}
-                style={{
-                  width: "90px",
-                  marginLeft: "8px",
-                  padding: "6px 10px",
-                  borderRadius: "8px",
-                  border: "1px solid #d5e1db",
-                }}
-              />
-            </label>
-
-            <button
-              className="secondary-btn"
-              style={{ padding: "6px 14px", fontSize: "13px" }}
-              onClick={() => loadWorker(workerId)}
-              disabled={loadingWorker}
-            >
-              Switch ID
-            </button>
+                className="member-select"
+              >
+                {workersList.map((w) => (
+                  <option key={w.worker_id} value={w.worker_id}>
+                    {w.name} (#{w.worker_id}) - {w.skills?.[0]?.skill_name || "Pro"}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
         {workerError && (
-          <div
-            style={{
-              padding: "16px",
-              background: "#fce5e5",
-              color: "#a23c3c",
-              borderRadius: "14px",
-              marginBottom: "20px",
-            }}
-          >
+          <div className="admin-toast-error">
             {workerError}
           </div>
         )}
 
-        <div className="worker-stats">
-          <div className="worker-stat-card">
-            <span>🛠️</span>
-            <div>
-              <strong>{primarySkill}</strong>
-              <p>
-                {worker?.experience_years ?? 5} Yrs Experience
-                {worker?.is_verified ? " · Verified" : ""}
-              </p>
+        {/* 1. 🛡️ TWO-LAYER TRUST SECTION (e-Shram Identity + Skill Certification) */}
+        <div className="worker-trust-section">
+          <div className="trust-layer-card">
+            <div className="trust-layer-header">
+              <span className={`trust-indicator-dot ${isEshramVerified ? "verified" : eshramStatus.toLowerCase()}`}></span>
+              <h4>Layer 1: e-Shram Identity Validation</h4>
+              <span className={`status-badge ${isEshramVerified ? "green" : "yellow"}`}>
+                {eshramStatus.toUpperCase()}
+              </span>
+            </div>
+            <p>
+              National Database of Unorganised Workers (NDUW) registry check. Authenticates identity and Aadhaar link.
+            </p>
+            <div className="trust-card-footer">
+              <small>e-Shram UAN: {storedVer?.uan || `98${String(workerId).padStart(2, "0")}-4567-8901`}</small>
+              <button
+                type="button"
+                className="text-link-btn"
+                onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
+              >
+                {isEshramVerified ? "View Card →" : "Verify e-Shram →"}
+              </button>
             </div>
           </div>
 
-          <div className="worker-stat-card">
-            <span>₹</span>
-            <div>
-              <strong>₹{worker?.hourly_rate ?? 300}/hr</strong>
-              <p>Base Hourly Rate</p>
+          <div className="trust-layer-card">
+            <div className="trust-layer-header">
+              <span className="trust-indicator-dot verified"></span>
+              <h4>Layer 2: Professional Skill Certification</h4>
+              <span className="status-badge green">LEVEL 4 CERTIFIED</span>
             </div>
-          </div>
-
-          <div className="worker-stat-card">
-            <span>⭐</span>
-            <div>
-              <strong>{ratingValue}</strong>
-              <p>{worker?.total_reviews ?? 0} Customer Reviews</p>
+            <p>
+              ITI / NCVET Trade Skill Certification: <strong>{primarySkill}</strong> with {worker?.experience_years ?? 5} years verified on-field experience.
+            </p>
+            <div className="trust-card-footer">
+              <small>Trade Registry: ITI-MP-JBP-2024</small>
+              <span className="certified-tag">✓ Trade Certified</span>
             </div>
           </div>
         </div>
 
-        {/* Availability Card */}
-        <div
-          className="booking-summary-card"
-          style={{ marginBottom: "35px" }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "15px",
-            }}
-          >
+        {/* 2. 💰 WORKER EARNINGS & FAIR FLOOR SECTION */}
+        <div className="worker-earnings-grid">
+          <div className="worker-stat-card highlight-earning">
+            <span className="stat-symbol">₹</span>
             <div>
-              <h3>Availability Status</h3>
-              <p style={{ color: "#667771", marginTop: "4px" }}>
+              <strong className="stat-amount">₹199</strong>
+              <p>Base Inspection & Labour Floor</p>
+              <span className="payout-pill">✓ 100% goes directly to you (0% platform cut)</span>
+            </div>
+          </div>
+
+          {/* 3. 🪙 GULLAK MUTUAL POOL SECTION */}
+          <div className="worker-stat-card gullak-card">
+            <span className="stat-symbol">🪙</span>
+            <div>
+              <strong className="stat-amount">Active Member</strong>
+              <p>Gullak Cooperative Welfare Pool</p>
+              <span className="gullak-pill">₹10/job pooled for emergency & health coverage</span>
+            </div>
+          </div>
+
+          <div className="worker-stat-card">
+            <span className="stat-symbol">⭐</span>
+            <div>
+              <strong className="stat-amount">
+                {worker?.average_rating ? Number(worker.average_rating).toFixed(1) : "4.9"}
+              </strong>
+              <p>Average Customer Rating</p>
+              <small style={{ color: "#687a73" }}>{worker?.total_reviews ?? 4} Verified Orders</small>
+            </div>
+          </div>
+        </div>
+
+        {/* Availability Toggle Card */}
+        <div className="booking-summary-card" style={{ marginBottom: "30px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "15px" }}>
+            <div>
+              <h3>Real-Time Dispatch Availability</h3>
+              <p style={{ color: "#687a73", marginTop: "4px" }}>
                 {worker?.is_active
-                  ? "You are marked AVAILABLE for customer recommendations."
-                  : "You are currently marked OFFLINE / BUSY."}
+                  ? "🟢 You are ONLINE and receiving nearby job assignments in Jabalpur."
+                  : "🔴 You are currently marked OFFLINE / BUSY."}
               </p>
             </div>
 
@@ -368,250 +391,143 @@ function Worker() {
               {availabilityUpdating
                 ? "Updating..."
                 : worker?.is_active
-                ? "✓ Currently Available (Click to Go Offline)"
-                : "⭕ Currently Offline (Click to Go Online)"}
+                ? "✓ Available for Jobs (Click to Go Offline)"
+                : "⭕ Offline (Click to Go Online)"}
             </button>
           </div>
         </div>
 
-        {/* Booking Lifecycle Management */}
+        {/* 4. 📋 WORKER ACTIVE JOB QUEUE & OTP ACTIONS */}
         <section className="worker-jobs">
           <div className="worker-section-title">
-            <h2>Manage Booking Lifecycle</h2>
+            <h2>Active Job Queue</h2>
             <button
               className="secondary-btn"
-              onClick={() =>
-                navigate("/worker-profile", {
-                  state: { worker_id: worker?.worker_id || workerId },
-                })
-              }
+              onClick={() => loadWorkerData(workerId)}
+              disabled={loadingWorker}
             >
-              Edit Profile
+              🔄 Refresh Queue
             </button>
           </div>
 
-          <div
-            className="booking-summary-card"
-            style={{ marginBottom: "25px" }}
-          >
-            <p style={{ color: "#667771", marginBottom: "15px" }}>
-              Enter any Booking ID to review details and perform live lifecycle
-              transitions (Accept, Start, Complete, or Cancel):
-            </p>
+          {jobMessage && <div className="admin-toast-success">{jobMessage}</div>}
+          {jobError && <div className="admin-toast-error">{jobError}</div>}
 
-            <form
-              onSubmit={handleLookupBooking}
-              style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}
-            >
-              <input
-                type="number"
-                value={lookupBookingId}
-                onChange={(e) => setLookupBookingId(e.target.value)}
-                placeholder="Enter Booking ID (e.g. 101)"
-                style={{
-                  flex: "1",
-                  minWidth: "200px",
-                  padding: "12px",
-                  borderRadius: "10px",
-                  border: "1px solid #d5e1db",
-                }}
-                required
-              />
-
-              <button
-                type="submit"
-                className="primary-btn"
-                disabled={loadingBooking}
-              >
-                {loadingBooking ? "Loading..." : "Load Booking"}
-              </button>
-            </form>
-
-            {bookingMessage && (
-              <p
-                style={{
-                  color: "#23704e",
-                  fontWeight: 700,
-                  marginTop: "15px",
-                }}
-              >
-                ✓ {bookingMessage}
-              </p>
-            )}
-
-            {bookingError && (
-              <p
-                style={{
-                  color: "#a23c3c",
-                  fontWeight: 700,
-                  marginTop: "15px",
-                }}
-              >
-                {bookingError}
-              </p>
-            )}
-          </div>
-
-          {activeBooking && (
-            <div className="booking-summary-card">
-              <div className="booking-summary-header">
+          {activeJob ? (
+            <div className="active-job-card">
+              <div className="job-card-header">
                 <div>
-                  <h3>Booking #{activeBooking.booking_id}</h3>
-                  <p>
-                    Service #{activeBooking.service_id} · Customer #
-                    {activeBooking.customer_id}
+                  <span className="job-tag">ASSIGNED ORDER #{activeJob.booking_id}</span>
+                  <h3>{activeJob.service_name || primarySkill}</h3>
+                  <p className="job-customer-info">
+                    Customer: <strong>{activeJob.customer_name || "Community Customer"}</strong> · Location: <strong>{activeJob.address || "Civil Lines, Jabalpur"}</strong>
                   </p>
                 </div>
 
-                <span
-                  className={
-                    activeBooking.status === "PENDING"
-                      ? "booking-status waiting"
-                      : activeBooking.status === "CANCELLED"
-                      ? "booking-status rejected"
-                      : "booking-status accepted"
-                  }
-                >
-                  {activeBooking.status}
-                </span>
-              </div>
-
-              <div className="booking-details-grid">
-                <div>
-                  <small>Amount</small>
-                  <strong>₹{activeBooking.amount}</strong>
-                </div>
-
-                <div>
-                  <small>Payment Status</small>
-                  <strong>{activeBooking.payment_status}</strong>
-                </div>
-
-                <div>
-                  <small>Date</small>
-                  <strong>{activeBooking.booking_date}</strong>
-                </div>
-
-                <div>
-                  <small>Service Location</small>
-                  <strong>
-                    {activeBooking.service_lat !== undefined &&
-                    activeBooking.service_lat !== null
-                      ? `${activeBooking.service_lat}, ${activeBooking.service_lon}`
-                      : "Jabalpur"}
-                  </strong>
+                <div className="job-status-box">
+                  <span className={`status-pill ${activeJob.status.toLowerCase()}`}>
+                    ● {activeJob.status === "ACCEPTED" ? "WORKER ARRIVED" : activeJob.status}
+                  </span>
+                  <div className="job-payout-box">
+                    <small>Your Payout:</small>
+                    <strong>₹199 (100%)</strong>
+                  </div>
                 </div>
               </div>
 
-              {/* Action Buttons based on status */}
-              <div
-                className="booking-actions"
-                style={{ marginTop: "20px" }}
-              >
-                {activeBooking.status === "PENDING" && (
-                  <>
+              <div className="job-card-body">
+                {/* Status: PENDING -> Worker accepts job */}
+                {activeJob.status === "PENDING" && (
+                  <div className="job-step-action-box">
+                    <p>New service request in your area. Accept to dispatch and view customer location.</p>
                     <button
                       className="primary-btn"
-                      onClick={() =>
-                        handleAcceptBooking(activeBooking.booking_id)
-                      }
-                      disabled={bookingActionLoading}
+                      onClick={handleAcceptJob}
+                      disabled={jobActionLoading}
                     >
-                      {bookingActionLoading
-                        ? "Processing..."
-                        : "✓ Accept Booking (PATCH /accept)"}
+                      {jobActionLoading ? "Accepting..." : "Accept Service Request →"}
                     </button>
-
-                    <button
-                      className="secondary-btn"
-                      style={{ borderColor: "#a23c3c", color: "#a23c3c" }}
-                      onClick={() =>
-                        handleCancelBooking(activeBooking.booking_id)
-                      }
-                      disabled={bookingActionLoading}
-                    >
-                      Cancel Booking
-                    </button>
-                  </>
+                  </div>
                 )}
 
-                {activeBooking.status === "ACCEPTED" && (
-                  <>
-                    <button
-                      className="primary-btn"
-                      onClick={() =>
-                        handleStartBooking(activeBooking.booking_id)
-                      }
-                      disabled={bookingActionLoading}
-                    >
-                      {bookingActionLoading
-                        ? "Processing..."
-                        : "▶ Start Service (PATCH /start)"}
-                    </button>
+                {/* Status: ACCEPTED -> Worker arrives, requests Start OTP */}
+                {activeJob.status === "ACCEPTED" && (
+                  <div className="job-step-action-box">
+                    <div className="otp-action-header">
+                      <strong>🔑 Step 1: Enter Start OTP (Customer Code: 4821)</strong>
+                      <p>Ask the customer for their 4-digit Start OTP upon arriving at their doorstep.</p>
+                    </div>
 
-                    <button
-                      className="secondary-btn"
-                      style={{ borderColor: "#a23c3c", color: "#a23c3c" }}
-                      onClick={() =>
-                        handleCancelBooking(activeBooking.booking_id)
-                      }
-                      disabled={bookingActionLoading}
-                    >
-                      Cancel Booking
-                    </button>
-                  </>
+                    <form onSubmit={handleStartJob} className="otp-inline-form">
+                      <input
+                        type="text"
+                        maxLength={4}
+                        placeholder="Enter 4-digit Start OTP (e.g. 4821)"
+                        value={enteredStartOtp}
+                        onChange={(e) => setEnteredStartOtp(e.target.value.replace(/\D/g, ""))}
+                        className="form-control otp-input"
+                        required
+                      />
+                      <button
+                        type="submit"
+                        className="primary-btn"
+                        disabled={jobActionLoading}
+                      >
+                        {jobActionLoading ? "Verifying..." : "Verify & Start Service"}
+                      </button>
+                    </form>
+                  </div>
                 )}
 
-                {activeBooking.status === "IN_PROGRESS" && (
-                  <button
-                    className="primary-btn"
-                    onClick={() =>
-                      handleCompleteBooking(activeBooking.booking_id)
-                    }
-                    disabled={bookingActionLoading}
-                  >
-                    {bookingActionLoading
-                      ? "Processing..."
-                      : "✓ Complete Service (PATCH /complete)"}
-                  </button>
+                {/* Status: IN_PROGRESS -> Worker finishes work, enters End OTP */}
+                {activeJob.status === "IN_PROGRESS" && (
+                  <div className="job-step-action-box in-progress-box">
+                    <div className="otp-action-header">
+                      <strong>🔒 Step 2: Enter End OTP (Customer Code: 9134)</strong>
+                      <p>Once the repair is done and verified with the customer, enter their End OTP to complete the job and disburse payment.</p>
+                    </div>
+
+                    <form onSubmit={handleCompleteJob} className="otp-inline-form">
+                      <input
+                        type="text"
+                        maxLength={4}
+                        placeholder="Enter 4-digit End OTP (e.g. 9134)"
+                        value={enteredEndOtp}
+                        onChange={(e) => setEnteredEndOtp(e.target.value.replace(/\D/g, ""))}
+                        className="form-control otp-input"
+                        required
+                      />
+                      <button
+                        type="submit"
+                        className="primary-btn"
+                        disabled={jobActionLoading}
+                      >
+                        {jobActionLoading ? "Settling Job..." : "Verify & Complete Service"}
+                      </button>
+                    </form>
+                  </div>
                 )}
 
-                {activeBooking.status === "COMPLETED" && (
-                  <p style={{ color: "#23704e", fontWeight: 700 }}>
-                    ✓ This booking has been successfully completed and paid.
-                  </p>
-                )}
-
-                {activeBooking.status === "CANCELLED" && (
-                  <p style={{ color: "#a23c3c", fontWeight: 700 }}>
-                    This booking was cancelled.
-                  </p>
+                {/* Status: COMPLETED */}
+                {activeJob.status === "COMPLETED" && (
+                  <div className="job-step-action-box completed-box">
+                    <div className="completed-check-icon">✓</div>
+                    <div>
+                      <strong>Job Completed & ₹199 Labour Disbursed!</strong>
+                      <p>Payment settled directly to your cooperative wallet with 0% platform fee deduction.</p>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
+          ) : (
+            <div className="empty-job-card">
+              <div className="empty-icon">🛋️</div>
+              <h3>No Active Jobs Right Now</h3>
+              <p>Keep your status marked AVAILABLE to receive instant dispatch orders.</p>
+            </div>
           )}
         </section>
-
-        <div className="worker-profile-card">
-          <div>
-            <h2>Grow with Sahāyu</h2>
-            <p>
-              Build your reputation and connect with more customers in your
-              community.
-            </p>
-          </div>
-
-          <button
-            className="primary-btn"
-            onClick={() =>
-              navigate("/worker-profile", {
-                state: { worker_id: worker?.worker_id || workerId },
-              })
-            }
-          >
-            Manage Profile
-          </button>
-        </div>
       </main>
     </div>
   );

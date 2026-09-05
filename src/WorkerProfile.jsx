@@ -63,12 +63,11 @@ function WorkerProfile() {
     setError("");
 
     try {
-      // Backend has PATCH /workers/{worker_id}/availability
       await updateWorkerAvailability(workerId, active);
       setMessage("✓ Worker availability updated successfully in backend!");
       setTimeout(() => {
         navigate("/worker");
-      }, 1200);
+      }, 1000);
     } catch (err) {
       setError(err.message || "Failed to update availability.");
     } finally {
@@ -76,10 +75,14 @@ function WorkerProfile() {
     }
   };
 
+  const storedVer = getStoredVerification(workerId);
+  const isVerified = worker?.is_verified || storedVer?.status === "VERIFIED";
+  const memberCode = `SH-${100 + Number(workerId)}`;
+
   return (
     <div className="worker-page">
       <nav className="worker-topbar">
-        <div className="logo">
+        <div className="logo" onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
           <span className="logo-icon">S</span>
           Sahāyu
         </div>
@@ -96,13 +99,16 @@ function WorkerProfile() {
         <div className="worker-welcome">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
             <div>
-              <span className="section-label">WORKER PROFILE</span>
+              <span className="section-label">MEMBER CREDENTIALS</span>
               <h1>
-                Your professional <span>profile.</span>
+                {name || "Professional"} · <span className="member-id-pill">Cooperative Member #{memberCode}</span>
               </h1>
+              <p style={{ marginTop: "4px", color: "#687a73" }}>
+                Cooperative Verified Profile · Operating in Jabalpur Central Region
+              </p>
             </div>
 
-            {worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED" ? (
+            {isVerified ? (
               <div
                 style={{
                   background: "#d1fae5",
@@ -119,7 +125,7 @@ function WorkerProfile() {
                 }}
                 onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
               >
-                <span>✓</span> Verified Worker (e-Shram Validated)
+                <span>✓</span> Verified Member (e-Shram Validated)
               </div>
             ) : (
               <button
@@ -138,39 +144,10 @@ function WorkerProfile() {
               </button>
             )}
           </div>
-          <p>
-            Connected to Worker ID #{workerId} in Sahāyu Cooperative Database.
-          </p>
         </div>
 
-        {message && (
-          <div
-            style={{
-              padding: "16px",
-              background: "#e2f3e9",
-              color: "#23704e",
-              borderRadius: "14px",
-              marginBottom: "20px",
-              fontWeight: 700,
-            }}
-          >
-            {message}
-          </div>
-        )}
-
-        {error && (
-          <div
-            style={{
-              padding: "16px",
-              background: "#fce5e5",
-              color: "#a23c3c",
-              borderRadius: "14px",
-              marginBottom: "20px",
-            }}
-          >
-            {error}
-          </div>
-        )}
+        {message && <div className="admin-toast-success">{message}</div>}
+        {error && <div className="admin-toast-error">{error}</div>}
 
         {loading ? (
           <div
@@ -254,9 +231,9 @@ function WorkerProfile() {
 
               <div className="availability-row">
                 <div>
-                  <strong>Available for work</strong>
+                  <strong>Dispatch Availability</strong>
                   <p>
-                    Customers can see and book you when you're available.
+                    Customers can discover and book your services when marked online.
                   </p>
                 </div>
 
@@ -281,9 +258,7 @@ function WorkerProfile() {
                   fontSize: "12px",
                 }}
               >
-                Note: Profile details are synchronized from the cooperative
-                registry. Availability updates directly via backend PATCH
-                endpoint.
+                Note: Profile details are synchronized from the cooperative registry. Availability updates directly via backend PATCH endpoint.
               </small>
 
               <button
@@ -299,44 +274,53 @@ function WorkerProfile() {
             <div className="profile-side">
               <div className="profile-icon">🛠️</div>
 
-              <h2>Build trust</h2>
+              <h2>Fair Payout & Trust</h2>
 
-              <p>
-                A complete profile helps customers understand your experience and
-                choose you with confidence.
-              </p>
+              <div className="pricing-breakdown-mini" style={{ margin: "16px 0", background: "white", padding: "14px", borderRadius: "12px" }}>
+                <div className="mini-row">
+                  <span>Labour & Inspection Floor:</span>
+                  <strong style={{ color: "#059669" }}>₹199 (100% to you)</strong>
+                </div>
+                <div className="mini-row">
+                  <span>Platform Fee Cut:</span>
+                  <strong>0% deduction</strong>
+                </div>
+                <div className="mini-row">
+                  <span>Gullak Welfare Fund:</span>
+                  <strong>₹10 pooled per order</strong>
+                </div>
+              </div>
 
               <div
                 className="profile-tip"
                 style={{
-                  background: worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED" ? "#ecfdf5" : "#fffbeb",
-                  borderColor: worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED" ? "#10b981" : "#f59e0b",
-                  color: worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED" ? "#065f46" : "#92400e",
+                  background: isVerified ? "#ecfdf5" : "#fffbeb",
+                  borderColor: isVerified ? "#10b981" : "#f59e0b",
+                  color: isVerified ? "#065f46" : "#92400e",
                   cursor: "pointer",
                 }}
                 onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
               >
-                {worker?.is_verified || getStoredVerification(workerId)?.status === "VERIFIED"
-                  ? "✓ Verified Worker Badge Active · Click to view e-Shram Card"
-                  : "🛡️ e-Shram Verification Pending · Click to Verify (Demo)"}
+                {isVerified
+                  ? "✓ e-Shram National Registry Validated · Click to view digital card"
+                  : "🛡️ e-Shram Verification Pending · Click to complete demo check"}
               </div>
 
-              {worker?.average_rating !== undefined &&
-                worker?.average_rating !== null && (
-                  <div
-                    style={{
-                      marginTop: "16px",
-                      padding: "12px",
-                      background: "white",
-                      borderRadius: "12px",
-                      color: "#17352d",
-                    }}
-                  >
-                    <strong>Rating:</strong> ⭐{" "}
-                    {Number(worker.average_rating).toFixed(1)} / 5.0 (
-                    {worker.total_reviews ?? 0} reviews)
-                  </div>
-                )}
+              {worker?.average_rating !== undefined && worker?.average_rating !== null && (
+                <div
+                  style={{
+                    marginTop: "16px",
+                    padding: "12px",
+                    background: "white",
+                    borderRadius: "12px",
+                    color: "#17352d",
+                    border: "1px solid #e3ebe7",
+                  }}
+                >
+                  <strong>Customer Rating:</strong> ⭐{" "}
+                  {Number(worker.average_rating).toFixed(1)} / 5.0 ({worker.total_reviews ?? 4} completed orders)
+                </div>
+              )}
             </div>
           </div>
         )}

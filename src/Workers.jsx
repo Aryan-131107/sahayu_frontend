@@ -82,8 +82,7 @@ function Workers() {
   }, [serviceId, latitude, longitude, topN]);
 
   const handleBookWorker = (worker) => {
-    const bookingAmount =
-      worker.hourly_rate || reqState.base_price || 350;
+    const bookingAmount = 239;
 
     navigate(`/booking?worker_id=${worker.worker_id}&service_id=${serviceId}`, {
       state: {
@@ -247,11 +246,7 @@ function Workers() {
                   ? Math.round(worker.recommendation_score * 100)
                   : 90;
 
-              const priceDisplay = worker.hourly_rate
-                ? `₹${worker.hourly_rate}/hr`
-                : reqState.base_price
-                ? `₹${reqState.base_price}`
-                : "₹350/hr";
+              const priceDisplay = "₹239 Total";
 
               return (
                 <div
@@ -342,8 +337,9 @@ function Workers() {
                   </div>
 
                   <div className="worker-price">
-                    <small>Starting from</small>
+                    <small>Standard Fee</small>
                     <strong>{priceDisplay}</strong>
+                    <span className="price-breakdown-sub">₹199 worker + ₹40 ops/gullak</span>
 
                     <button
                       className="primary-btn"

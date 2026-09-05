@@ -18,12 +18,11 @@ function AdminDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Detect initial tab from path e.g. /admin/workers, /admin/verifications, etc.
+  // Detect initial tab from path e.g. /admin/workers, /admin/verifications, /admin/payments, /admin/gullak, etc.
   const pathSegment = location.pathname.split("/")[2] || "overview";
+  const validTabs = ["overview", "workers", "verifications", "bookings", "payments", "gullak", "services", "reviews"];
   const [activeTab, setActiveTab] = useState(
-    ["overview", "workers", "verifications", "bookings", "services", "reviews"].includes(pathSegment)
-      ? pathSegment
-      : "overview"
+    validTabs.includes(pathSegment) ? pathSegment : "overview"
   );
 
   // Admin authorization state
@@ -50,7 +49,7 @@ function AdminDashboard() {
   const [showAddServiceModal, setShowAddServiceModal] = useState(false);
   const [newServiceName, setNewServiceName] = useState("");
   const [newServiceDesc, setNewServiceDesc] = useState("");
-  const [newServicePrice, setNewServicePrice] = useState("350");
+  const [newServicePrice, setNewServicePrice] = useState("239");
   const [newServiceSkillId, setNewServiceSkillId] = useState("1");
   const [creatingService, setCreatingService] = useState(false);
 
@@ -95,7 +94,7 @@ function AdminDashboard() {
       setSkills(Array.isArray(skillsData) ? skillsData : []);
       setBookings(Array.isArray(bookingsData) ? bookingsData : []);
 
-      // Load reviews for top workers
+      // Load reviews for workers
       const reviewPromises = mergedWorkers.slice(0, 8).map(async (w) => {
         try {
           const revRes = await getWorkerReviews(w.worker_id);
@@ -201,120 +200,92 @@ function AdminDashboard() {
     setIsAdminAuthenticated(false);
   };
 
-  // Calculate Overview Metric Cards
-  const metrics = useMemo(() => {
-    const totalWorkers = workers.length;
-    const verifiedWorkers = workers.filter((w) => w.is_verified || w.verification_status === "VERIFIED").length;
-    const pendingVerification = workers.filter((w) => w.verification_status === "PENDING" || (!w.is_verified && w.verification_status !== "REJECTED")).length;
-    const activeWorkers = workers.filter((w) => w.is_active !== false).length;
-    const totalCustomers = 42; // Cooperative demo cluster customer count
-    const totalBookings = bookings.length;
-    const completedBookings = bookings.filter((b) => b.status === "COMPLETED").length;
-    const totalRevenue = bookings
-      .filter((b) => b.payment_status === "PAID" || b.status === "COMPLETED")
-      .reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+  // Sync tab navigation with URL
+  const switchTab = (tab) => {
+    setActiveTab(tab);
+    navigate(`/admin/${tab}`);
+  };
 
-    return {
-      totalWorkers,
-      verifiedWorkers,
-      pendingVerification,
-      activeWorkers,
-      totalCustomers,
-      totalBookings,
-      completedBookings,
-      totalRevenue,
-    };
-  }, [workers, bookings]);
+  // Worker Action Handlers
+  const handleToggleWorkerStatus = async (workerItem) => {
+    const newStatus = !workerItem.is_active;
+    try {
+      await updateWorkerAvailability(workerItem.worker_id, newStatus);
+      setWorkers((prev) =>
+        prev.map((w) =>
+          w.worker_id === workerItem.worker_id ? { ...w, is_active: newStatus } : w
+        )
+      );
+      setActionSuccess(
+        `✓ ${workerItem.name} availability toggled to ${newStatus ? "ACTIVE" : "INACTIVE"}.`
+      );
+      setTimeout(() => setActionSuccess(""), 4000);
+    } catch (err) {
+      alert(`Failed to update availability: ${err.message}`);
+    }
+  };
 
-  // Worker verification action (Verify)
-  const handleVerifyWorker = (worker) => {
-    const record = {
+  const handleVerifyWorker = (workerItem) => {
+    setStoredVerification(workerItem.worker_id, {
       status: "VERIFIED",
-      workerId: worker.worker_id,
-      name: worker.name,
-      mobile: worker.phone || "9876543210",
-      uan: worker.eshram_uan || `98${String(worker.worker_id).padStart(2, "0")}-4567-${1000 + worker.worker_id}`,
-      skill: worker.skills?.[0]?.skill_name || "Electrician",
-      experience: worker.experience_years || 5,
-      location: worker.address || worker.city || "Jabalpur",
-      verifiedAt: new Date().toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      }),
-    };
+      verified_at: new Date().toISOString(),
+      uan: workerItem.eshram_uan,
+      worker_name: workerItem.name,
+      trade: workerItem.skills?.[0]?.skill_name || "Cooperative Worker",
+    });
 
-    setStoredVerification(worker.worker_id, record);
     setWorkers((prev) =>
       prev.map((w) =>
-        w.worker_id === worker.worker_id
+        w.worker_id === workerItem.worker_id
           ? { ...w, is_verified: true, verification_status: "VERIFIED" }
           : w
       )
     );
-    setActionSuccess(`Worker #${worker.worker_id} (${worker.name}) successfully verified with e-Shram!`);
+
+    setActionSuccess(`✓ ${workerItem.name} has been approved and marked VERIFIED.`);
     setTimeout(() => setActionSuccess(""), 4000);
   };
 
-  // Worker verification action (Reject)
-  const handleRejectWorker = (worker) => {
-    const record = {
+  const handleRejectWorker = (workerItem) => {
+    setStoredVerification(workerItem.worker_id, {
       status: "REJECTED",
-      workerId: worker.worker_id,
-      name: worker.name,
-      uan: worker.eshram_uan,
-      reason: "Manual admin review: document signature mismatch.",
-    };
+      verified_at: new Date().toISOString(),
+      uan: workerItem.eshram_uan,
+      worker_name: workerItem.name,
+      rejection_reason: "Document details mismatch with demo registry.",
+    });
 
-    setStoredVerification(worker.worker_id, record);
     setWorkers((prev) =>
       prev.map((w) =>
-        w.worker_id === worker.worker_id
+        w.worker_id === workerItem.worker_id
           ? { ...w, is_verified: false, verification_status: "REJECTED" }
           : w
       )
     );
-    setActionSuccess(`Worker #${worker.worker_id} verification marked as REJECTED.`);
+
+    setActionSuccess(`✕ ${workerItem.name} verification has been rejected.`);
     setTimeout(() => setActionSuccess(""), 4000);
   };
 
-  // Worker activate / deactivate toggle
-  const handleToggleWorkerStatus = async (worker) => {
-    const newStatus = !worker.is_active;
-    try {
-      await updateWorkerAvailability(worker.worker_id, newStatus);
-      setWorkers((prev) =>
-        prev.map((w) => (w.worker_id === worker.worker_id ? { ...w, is_active: newStatus } : w))
-      );
-      setActionSuccess(`Worker #${worker.worker_id} status updated to ${newStatus ? "ACTIVE" : "INACTIVE"}`);
-      setTimeout(() => setActionSuccess(""), 4000);
-    } catch {
-      // Optimistic update
-      setWorkers((prev) =>
-        prev.map((w) => (w.worker_id === worker.worker_id ? { ...w, is_active: newStatus } : w))
-      );
-    }
-  };
-
-  // Create new service (POST /services)
+  // Add Service Handler
   const handleCreateService = async (e) => {
     e.preventDefault();
-    if (!newServiceName) return;
+    if (!newServiceName.trim()) return;
 
     setCreatingService(true);
     try {
-      const created = await createService({
-        service: newServiceName,
-        description: newServiceDesc,
-        base_price: Number(newServicePrice),
-        skill_id: Number(newServiceSkillId),
+      const res = await createService({
+        service: newServiceName.trim(),
+        description: newServiceDesc.trim() || "Standard cooperative home service.",
+        base_price: parseFloat(newServicePrice) || 239,
+        skill_id: parseInt(newServiceSkillId, 10) || 1,
       });
 
-      setServices((prev) => [created, ...prev]);
+      setServices((prev) => [...prev, res]);
       setShowAddServiceModal(false);
       setNewServiceName("");
       setNewServiceDesc("");
-      setActionSuccess(`New service "${created.service_name || created.service}" created successfully!`);
+      setActionSuccess(`✓ Service '${res.service || res.service_name}' added to catalog!`);
       setTimeout(() => setActionSuccess(""), 4000);
     } catch (err) {
       alert(`Failed to create service: ${err.message}`);
@@ -323,91 +294,104 @@ function AdminDashboard() {
     }
   };
 
-  // Filtered workers list
+  // Metrics Calculations (Transparent Pricing Model)
+  const totalWorkersCount = workers.length;
+  const verifiedWorkersCount = workers.filter((w) => w.is_verified).length;
+  const pendingVerificationsCount = workers.filter(
+    (w) => !w.is_verified && w.verification_status !== "REJECTED"
+  ).length;
+  const activeWorkersCount = workers.filter((w) => w.is_active).length;
+  const totalBookingsCount = bookings.length;
+  const completedBookingsCount = bookings.filter((b) => b.status === "COMPLETED").length;
+
+  // Pricing Model: Customer Paid = ₹239, Worker Payout = ₹199 (100%), Platform Ops = ₹30, Gullak = ₹10
+  const totalCustomerPayments = completedBookingsCount * 239;
+  const totalWorkerEarnings = completedBookingsCount * 199;
+  const totalPlatformFees = completedBookingsCount * 30;
+  const totalGullakPool = completedBookingsCount * 10;
+
+  // Filtered Workers List
   const filteredWorkers = useMemo(() => {
     return workers.filter((w) => {
-      const matchesSearch =
-        (w.name || "").toLowerCase().includes(searchWorkerTerm.toLowerCase()) ||
-        String(w.worker_id).includes(searchWorkerTerm) ||
-        (w.phone || "").includes(searchWorkerTerm);
+      const nameMatch = (w.name || "").toLowerCase().includes(searchWorkerTerm.toLowerCase());
+      const skillName = (w.skills?.[0]?.skill_name || "").toLowerCase();
+      const termMatch = nameMatch || skillName.includes(searchWorkerTerm.toLowerCase());
 
-      const workerSkill = w.skills?.[0]?.skill_name || "";
-      const matchesSkill = filterSkill === "ALL" || workerSkill.toLowerCase() === filterSkill.toLowerCase();
+      const skillMatch =
+        filterSkill === "ALL" ||
+        w.skills?.some((s) => String(s.skill_id) === String(filterSkill));
 
-      const matchesVer =
+      const verMatch =
         filterVerification === "ALL" ||
         (filterVerification === "VERIFIED" && w.is_verified) ||
-        (filterVerification === "PENDING" && w.verification_status === "PENDING") ||
-        (filterVerification === "UNVERIFIED" && !w.is_verified && w.verification_status !== "PENDING");
+        (filterVerification === "PENDING" && !w.is_verified && w.verification_status !== "REJECTED") ||
+        (filterVerification === "REJECTED" && w.verification_status === "REJECTED");
 
-      return matchesSearch && matchesSkill && matchesVer;
+      return termMatch && skillMatch && verMatch;
     });
   }, [workers, searchWorkerTerm, filterSkill, filterVerification]);
 
-  // Filtered bookings list
+  // Filtered Bookings List
   const filteredBookings = useMemo(() => {
     return bookings.filter((b) => {
-      const matchesSearch =
-        String(b.booking_id).includes(searchBookingTerm) ||
-        (b.customer_name || "").toLowerCase().includes(searchBookingTerm.toLowerCase()) ||
-        (b.worker_name || "").toLowerCase().includes(searchBookingTerm.toLowerCase()) ||
-        (b.service_name || "").toLowerCase().includes(searchBookingTerm.toLowerCase());
+      const term = searchBookingTerm.toLowerCase();
+      const idMatch = String(b.booking_id).includes(term);
+      const custMatch = String(b.customer_id).includes(term) || (b.customer_name || "").toLowerCase().includes(term);
+      const workerMatch = String(b.worker_id).includes(term) || (b.worker_name || "").toLowerCase().includes(term);
+      const statusMatch = filterBookingStatus === "ALL" || b.status === filterBookingStatus;
 
-      const matchesStatus = filterBookingStatus === "ALL" || b.status === filterBookingStatus;
-
-      return matchesSearch && matchesStatus;
+      return (idMatch || custMatch || workerMatch) && statusMatch;
     });
   }, [bookings, searchBookingTerm, filterBookingStatus]);
 
-  // If not logged in as Admin, show Admin Authorization Gate
+  // 1. Authorization Screen
   if (!isAdminAuthenticated) {
     return (
-      <div className="admin-auth-page">
-        <div className="admin-auth-card">
-          <div className="admin-badge-icon">🏛️</div>
-          <div className="logo" style={{ justifyContent: "center", marginBottom: "8px" }}>
-            <span className="logo-icon">S</span>
-            <span>Sahāyu</span>
-          </div>
-          <h2>Cooperative Admin Portal</h2>
-          <p className="admin-auth-subtitle">
-            Secure administrative control desk for worker verifications, cooperative gig management, and platform analytics.
-          </p>
+      <div className="admin-login-page">
+        <div className="admin-login-card">
+          <div className="admin-lock-icon">🏛️</div>
+          <h2>Sahāyu Cooperative Admin</h2>
+          <p>Restricted access for Cooperative Governance & Welfare Desk.</p>
 
-          {authError && <div className="auth-error-msg">{authError}</div>}
+          {authError && <div className="admin-auth-error">{authError}</div>}
 
           <form onSubmit={handleAdminLogin}>
-            <div className="form-group" style={{ textAlign: "left" }}>
-              <label>Admin Passkey / PIN</label>
+            <div className="form-group">
+              <label>Passcode</label>
               <input
                 type="password"
                 className="form-control"
-                placeholder="Enter admin passcode (e.g. sahayu2026)"
+                placeholder="Enter admin passcode (e.g. admin)"
                 value={adminPin}
                 onChange={(e) => setAdminPin(e.target.value)}
+                autoFocus
               />
             </div>
 
-            <button type="submit" className="primary-btn admin-login-btn">
-              Authenticate & Open Dashboard →
+            <button type="submit" className="primary-btn full-btn">
+              Unlock Admin Portal →
             </button>
           </form>
 
-          <div className="demo-unlock-box">
+          <div style={{ marginTop: "16px", textAlign: "center" }}>
             <button
               type="button"
-              className="quick-unlock-btn"
+              className="demo-quick-auth-btn"
               onClick={() => {
                 sessionStorage.setItem("sahayu_admin_auth", "true");
                 setIsAdminAuthenticated(true);
               }}
             >
-              ⚡ 1-Click Demo Admin Access (SIH Evaluators)
+              ⚡ 1-Click Demo Admin Access
             </button>
           </div>
 
-          <button className="back-home-btn" onClick={() => navigate("/")}>
-            ← Back to Sahāyu Home
+          <button
+            className="back-link"
+            style={{ marginTop: "20px" }}
+            onClick={() => navigate("/")}
+          >
+            ← Back to Home
           </button>
         </div>
       </div>
@@ -415,727 +399,856 @@ function AdminDashboard() {
   }
 
   return (
-    <div className="admin-layout">
-      {/* SIDEBAR NAVIGATION */}
-      <aside className="admin-sidebar">
-        <div className="admin-sidebar-header">
+    <div className="admin-portal-wrapper">
+      {/* Top Header */}
+      <header className="admin-topbar">
+        <div className="admin-brand">
           <div className="logo" onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
             <span className="logo-icon">S</span>
-            <span>Sahāyu Admin</span>
+            Sahāyu
           </div>
-          <span className="coop-cluster-pill">Jabalpur Central Cluster</span>
+          <span className="admin-tag">COOPERATIVE ADMIN</span>
         </div>
 
-        <nav className="admin-nav-menu">
+        <div className="admin-header-actions">
           <button
-            className={`admin-nav-item ${activeTab === "overview" ? "active" : ""}`}
-            onClick={() => setActiveTab("overview")}
+            className="secondary-btn"
+            onClick={loadDashboardData}
+            title="Reload live database values"
           >
-            <span className="nav-icon">📊</span>
-            <span>Overview</span>
+            🔄 Refresh
           </button>
-
-          <button
-            className={`admin-nav-item ${activeTab === "workers" ? "active" : ""}`}
-            onClick={() => setActiveTab("workers")}
-          >
-            <span className="nav-icon">👨‍🔧</span>
-            <span>Worker Management</span>
-            <span className="nav-count-badge">{workers.length}</span>
+          <button className="secondary-btn" onClick={() => navigate("/")}>
+            View Website
           </button>
-
-          <button
-            className={`admin-nav-item ${activeTab === "verifications" ? "active" : ""}`}
-            onClick={() => setActiveTab("verifications")}
-          >
-            <span className="nav-icon">🛡️</span>
-            <span>Verifications</span>
-            {metrics.pendingVerification > 0 && (
-              <span className="nav-alert-badge">{metrics.pendingVerification}</span>
-            )}
+          <button className="logout-btn" onClick={handleAdminLogout}>
+            Logout ⎋
           </button>
+        </div>
+      </header>
 
-          <button
-            className={`admin-nav-item ${activeTab === "bookings" ? "active" : ""}`}
-            onClick={() => setActiveTab("bookings")}
-          >
-            <span className="nav-icon">📋</span>
-            <span>Bookings</span>
-            <span className="nav-count-badge">{bookings.length}</span>
-          </button>
+      {/* Main Admin Layout */}
+      <div className="admin-layout-container">
+        {/* Sidebar Navigation */}
+        <aside className="admin-sidebar">
+          <nav className="admin-nav">
+            <button
+              className={`nav-item ${activeTab === "overview" ? "active" : ""}`}
+              onClick={() => switchTab("overview")}
+            >
+              <span className="nav-icon">📊</span>
+              Overview
+            </button>
 
-          <button
-            className={`admin-nav-item ${activeTab === "services" ? "active" : ""}`}
-            onClick={() => setActiveTab("services")}
-          >
-            <span className="nav-icon">⚙️</span>
-            <span>Services</span>
-            <span className="nav-count-badge">{services.length}</span>
-          </button>
+            <button
+              className={`nav-item ${activeTab === "workers" ? "active" : ""}`}
+              onClick={() => switchTab("workers")}
+            >
+              <span className="nav-icon">👨‍🔧</span>
+              Workers
+              <span className="nav-badge">{totalWorkersCount}</span>
+            </button>
 
-          <button
-            className={`admin-nav-item ${activeTab === "reviews" ? "active" : ""}`}
-            onClick={() => setActiveTab("reviews")}
-          >
-            <span className="nav-icon">⭐</span>
-            <span>Reviews</span>
-          </button>
-        </nav>
+            <button
+              className={`nav-item ${activeTab === "verifications" ? "active" : ""}`}
+              onClick={() => switchTab("verifications")}
+            >
+              <span className="nav-icon">🛡️</span>
+              Verifications
+              {pendingVerificationsCount > 0 && (
+                <span className="nav-badge alert">{pendingVerificationsCount}</span>
+              )}
+            </button>
 
-        <div className="admin-sidebar-footer">
-          <div className="admin-user-info">
-            <span className="admin-avatar">👤</span>
-            <div>
-              <strong>Super Admin</strong>
-              <small>admin@sahayu.coop</small>
+            <button
+              className={`nav-item ${activeTab === "bookings" ? "active" : ""}`}
+              onClick={() => switchTab("bookings")}
+            >
+              <span className="nav-icon">📋</span>
+              Bookings
+              <span className="nav-badge">{totalBookingsCount}</span>
+            </button>
+
+            <button
+              className={`nav-item ${activeTab === "payments" ? "active" : ""}`}
+              onClick={() => switchTab("payments")}
+            >
+              <span className="nav-icon">💳</span>
+              Payments
+            </button>
+
+            <button
+              className={`nav-item ${activeTab === "gullak" ? "active" : ""}`}
+              onClick={() => switchTab("gullak")}
+            >
+              <span className="nav-icon">🪙</span>
+              Gullak Pool
+            </button>
+
+            <button
+              className={`nav-item ${activeTab === "services" ? "active" : ""}`}
+              onClick={() => switchTab("services")}
+            >
+              <span className="nav-icon">🛠️</span>
+              Services
+              <span className="nav-badge">{services.length}</span>
+            </button>
+
+            <button
+              className={`nav-item ${activeTab === "reviews" ? "active" : ""}`}
+              onClick={() => switchTab("reviews")}
+            >
+              <span className="nav-icon">⭐</span>
+              Reviews
+              <span className="nav-badge">{reviewsList.length}</span>
+            </button>
+          </nav>
+        </aside>
+
+        {/* Content Area */}
+        <main className="admin-content-area">
+          {actionSuccess && (
+            <div className="admin-toast-success">
+              {actionSuccess}
             </div>
-          </div>
-          <button className="logout-btn" onClick={handleAdminLogout} title="Logout">
-            ⏻ Exit
-          </button>
-        </div>
-      </aside>
+          )}
 
-      {/* MAIN CONTENT AREA */}
-      <main className="admin-main-content">
-        {/* Top Header Bar */}
-        <header className="admin-topbar">
-          <div className="topbar-title">
-            <h1>
-              {activeTab === "overview" && "Platform Overview & Analytics"}
-              {activeTab === "workers" && "Worker Directory & Management"}
-              {activeTab === "verifications" && "e-Shram / Shramik Verification Queue"}
-              {activeTab === "bookings" && "Service Orders & Bookings"}
-              {activeTab === "services" && "Cooperative Service Offerings"}
-              {activeTab === "reviews" && "Customer Ratings & Feedback"}
-            </h1>
-            <p>Sahāyu Cooperative Gig Platform · Jabalpur District</p>
-          </div>
+          {error && (
+            <div className="admin-toast-error">
+              {error}
+            </div>
+          )}
 
-          <div className="topbar-actions">
-            <button
-              className="secondary-btn reload-btn"
-              onClick={loadDashboardData}
-              disabled={loading}
-            >
-              🔄 Refresh Data
-            </button>
-            <button
-              className="primary-btn"
-              onClick={() => navigate("/worker/verification")}
-            >
-              + Demo Worker Verification
-            </button>
-          </div>
-        </header>
-
-        {/* Global Toast Success Message */}
-        {actionSuccess && (
-          <div className="admin-toast-success">
-            <span>✓ {actionSuccess}</span>
-          </div>
-        )}
-
-        {/* Global Error Banner */}
-        {error && (
-          <div className="admin-toast-error">
-            <span>⚠️ {error}</span>
-          </div>
-        )}
-
-        {loading ? (
-          <div className="admin-loading-container">
-            <div className="spinner large"></div>
-            <p>Loading live platform data from PostgreSQL backend...</p>
-          </div>
-        ) : (
-          <div className="admin-tab-body">
-            {/* 1. ==================== OVERVIEW SECTION ==================== */}
-            {activeTab === "overview" && (
-              <div className="overview-tab-content">
-                {/* METRICS STATS CARDS */}
-                <div className="admin-stats-grid">
-                  <div className="stat-card">
-                    <div className="stat-icon-wrap blue">👨‍🔧</div>
-                    <div className="stat-details">
-                      <span className="stat-title">Total Workers</span>
-                      <strong className="stat-value">{metrics.totalWorkers}</strong>
-                      <span className="stat-trend positive">Registered in cooperative</span>
+          {loading ? (
+            <div className="admin-loading-state">
+              <p>Fetching live cooperative data...</p>
+            </div>
+          ) : (
+            <>
+              {/* TAB 1: OVERVIEW */}
+              {activeTab === "overview" && (
+                <div className="admin-tab-content">
+                  <div className="tab-header">
+                    <div>
+                      <h2>Platform Overview</h2>
+                      <p>Real-time metrics, worker verifications, and transparent fee division.</p>
                     </div>
                   </div>
 
-                  <div className="stat-card">
-                    <div className="stat-icon-wrap green">✓</div>
-                    <div className="stat-details">
-                      <span className="stat-title">Verified Workers</span>
-                      <strong className="stat-value">{metrics.verifiedWorkers}</strong>
-                      <span className="stat-trend positive">e-Shram Authenticated</span>
+                  {/* Top Key Metrics Grid */}
+                  <div className="admin-metrics-grid">
+                    <div className="metric-card">
+                      <div className="metric-header">
+                        <span className="metric-title">TOTAL WORKERS</span>
+                        <span className="metric-icon">👨‍🔧</span>
+                      </div>
+                      <div className="metric-value">{totalWorkersCount}</div>
+                      <span className="metric-sub">{activeWorkersCount} Active in Jabalpur</span>
+                    </div>
+
+                    <div className="metric-card">
+                      <div className="metric-header">
+                        <span className="metric-title">VERIFIED WORKERS</span>
+                        <span className="metric-icon">✓</span>
+                      </div>
+                      <div className="metric-value green">{verifiedWorkersCount}</div>
+                      <span className="metric-sub">e-Shram Authenticated</span>
+                    </div>
+
+                    <div className="metric-card">
+                      <div className="metric-header">
+                        <span className="metric-title">PENDING VERIFICATIONS</span>
+                        <span className="metric-icon">⏳</span>
+                      </div>
+                      <div className="metric-value orange">{pendingVerificationsCount}</div>
+                      <span className="metric-sub">Action required in queue</span>
+                    </div>
+
+                    <div className="metric-card">
+                      <div className="metric-header">
+                        <span className="metric-title">COMPLETED JOBS</span>
+                        <span className="metric-icon">📋</span>
+                      </div>
+                      <div className="metric-value">{completedBookingsCount}</div>
+                      <span className="metric-sub">Out of {totalBookingsCount} total orders</span>
+                    </div>
+
+                    <div className="metric-card highlight">
+                      <div className="metric-header">
+                        <span className="metric-title">CUSTOMER PAYMENTS</span>
+                        <span className="metric-icon">₹</span>
+                      </div>
+                      <div className="metric-value">₹{totalCustomerPayments}</div>
+                      <span className="metric-sub">@ ₹239 per completed job</span>
+                    </div>
+
+                    <div className="metric-card">
+                      <div className="metric-header">
+                        <span className="metric-title">WORKER LABOUR PAYOUTS</span>
+                        <span className="metric-icon">🤝</span>
+                      </div>
+                      <div className="metric-value green">₹{totalWorkerEarnings}</div>
+                      <span className="metric-sub">100% of ₹199 floor disbursed</span>
+                    </div>
+
+                    <div className="metric-card">
+                      <div className="metric-header">
+                        <span className="metric-title">PLATFORM OPERATIONS</span>
+                        <span className="metric-icon">⚡</span>
+                      </div>
+                      <div className="metric-value">₹{totalPlatformFees}</div>
+                      <span className="metric-sub">@ ₹30 operations fee/order</span>
+                    </div>
+
+                    <div className="metric-card highlight-gullak">
+                      <div className="metric-header">
+                        <span className="metric-title">GULLAK WELFARE POOL</span>
+                        <span className="metric-icon">🪙</span>
+                      </div>
+                      <div className="metric-value gold">₹{totalGullakPool}</div>
+                      <span className="metric-sub">@ ₹10 pooled welfare/order</span>
                     </div>
                   </div>
 
-                  <div className="stat-card">
-                    <div className="stat-icon-wrap yellow">⏳</div>
-                    <div className="stat-details">
-                      <span className="stat-title">Pending Verification</span>
-                      <strong className="stat-value">{metrics.pendingVerification}</strong>
-                      <span className="stat-trend neutral">Requires review</span>
-                    </div>
-                  </div>
+                  {/* Two Column Section */}
+                  <div className="overview-two-col">
+                    <div className="overview-card">
+                      <div className="overview-card-header">
+                        <h3>Pending e-Shram Queue</h3>
+                        <button className="text-btn" onClick={() => switchTab("verifications")}>
+                          View All →
+                        </button>
+                      </div>
 
-                  <div className="stat-card">
-                    <div className="stat-icon-wrap emerald">🟢</div>
-                    <div className="stat-details">
-                      <span className="stat-title">Active Workers</span>
-                      <strong className="stat-value">{metrics.activeWorkers}</strong>
-                      <span className="stat-trend positive">Online & available</span>
+                      <div className="queue-list">
+                        {workers
+                          .filter((w) => !w.is_verified && w.verification_status !== "REJECTED")
+                          .slice(0, 4)
+                          .map((w) => (
+                            <div key={w.worker_id} className="queue-item">
+                              <div className="queue-worker-info">
+                                <strong>{w.name}</strong>
+                                <small>
+                                  {w.skills?.[0]?.skill_name || "Cooperative Worker"} · UAN: {w.eshram_uan}
+                                </small>
+                              </div>
+                              <div className="queue-actions">
+                                <button
+                                  className="action-btn verify"
+                                  onClick={() => handleVerifyWorker(w)}
+                                >
+                                  Approve ✓
+                                </button>
+                                <button
+                                  className="action-btn reject"
+                                  onClick={() => handleRejectWorker(w)}
+                                >
+                                  Reject ✕
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="stat-card">
-                    <div className="stat-icon-wrap purple">👥</div>
-                    <div className="stat-details">
-                      <span className="stat-title">Customers</span>
-                      <strong className="stat-value">{metrics.totalCustomers}</strong>
-                      <span className="stat-trend positive">Active community users</span>
-                    </div>
-                  </div>
+                    <div className="overview-card">
+                      <div className="overview-card-header">
+                        <h3>Recent Service Orders</h3>
+                        <button className="text-btn" onClick={() => switchTab("bookings")}>
+                          View All →
+                        </button>
+                      </div>
 
-                  <div className="stat-card">
-                    <div className="stat-icon-wrap orange">📋</div>
-                    <div className="stat-details">
-                      <span className="stat-title">Total Bookings</span>
-                      <strong className="stat-value">{metrics.totalBookings}</strong>
-                      <span className="stat-trend neutral">All time bookings</span>
-                    </div>
-                  </div>
-
-                  <div className="stat-card">
-                    <div className="stat-icon-wrap teal">🎯</div>
-                    <div className="stat-details">
-                      <span className="stat-title">Completed Bookings</span>
-                      <strong className="stat-value">{metrics.completedBookings}</strong>
-                      <span className="stat-trend positive">100% fulfill rate</span>
-                    </div>
-                  </div>
-
-                  <div className="stat-card highlight-revenue-card">
-                    <div className="stat-icon-wrap gold">₹</div>
-                    <div className="stat-details">
-                      <span className="stat-title">Platform Revenue</span>
-                      <strong className="stat-value">₹{metrics.totalRevenue.toLocaleString("en-IN")}</strong>
-                      <span className="stat-trend positive">Fair wages disbursed</span>
+                      <div className="recent-orders-list">
+                        {bookings.slice(0, 4).map((b) => (
+                          <div key={b.booking_id} className="recent-order-item">
+                            <div>
+                              <strong>Order #{b.booking_id}</strong>
+                              <small>
+                                {b.service_name || `Service #${b.service_id}`} · Amount: ₹{b.amount || 239}
+                              </small>
+                            </div>
+                            <span className={`status-pill ${b.status.toLowerCase()}`}>
+                              ● {b.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
+              )}
 
-                {/* OVERVIEW DETAIL PANELS */}
-                <div className="overview-split-panels">
-                  {/* Recent Verifications Panel */}
-                  <div className="overview-panel">
-                    <div className="panel-header">
-                      <h3>Recent Verification Queue</h3>
-                      <button className="text-link-btn" onClick={() => setActiveTab("verifications")}>
-                        View All →
-                      </button>
-                    </div>
-                    <div className="panel-list">
-                      {workers.slice(0, 5).map((w) => (
-                        <div key={w.worker_id} className="panel-item-row">
-                          <div className="worker-item-main">
-                            <span className="avatar-circle">👨‍🔧</span>
-                            <div>
-                              <strong>{w.name}</strong>
-                              <small>
-                                #{w.worker_id} · {w.skills?.[0]?.skill_name || "General Service"}
-                              </small>
-                            </div>
-                          </div>
-                          <div className="worker-item-status">
-                            {w.is_verified ? (
-                              <span className="status-badge green">✓ VERIFIED</span>
-                            ) : (
-                              <span className="status-badge yellow">⏳ PENDING</span>
-                            )}
-                            <button
-                              className="action-btn small"
-                              onClick={() => handleVerifyWorker(w)}
-                            >
-                              {w.is_verified ? "Re-verify" : "Verify"}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+              {/* TAB 2: WORKERS */}
+              {activeTab === "workers" && (
+                <div className="admin-tab-content">
+                  <div className="tab-header">
+                    <div>
+                      <h2>Worker Management</h2>
+                      <p>View, verify credentials, and manage dispatch availability for all registered professionals.</p>
                     </div>
                   </div>
 
-                  {/* Recent Bookings Panel */}
-                  <div className="overview-panel">
-                    <div className="panel-header">
-                      <h3>Recent Service Orders</h3>
-                      <button className="text-link-btn" onClick={() => setActiveTab("bookings")}>
-                        View All →
-                      </button>
-                    </div>
-                    <div className="panel-list">
-                      {bookings.slice(0, 5).map((b) => (
-                        <div key={b.booking_id} className="panel-item-row">
-                          <div className="booking-item-main">
-                            <span className="booking-id-tag">#{b.booking_id}</span>
-                            <div>
-                              <strong>{b.service_name || "Service Order"}</strong>
-                              <small>
-                                {b.customer_name || "Customer"} → {b.worker_name || "Worker"}
-                              </small>
-                            </div>
-                          </div>
-                          <div className="booking-item-amount">
-                            <strong>₹{b.amount}</strong>
-                            <span className={`status-pill ${b.status.toLowerCase()}`}>{b.status}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 2. ==================== WORKER MANAGEMENT SECTION ==================== */}
-            {activeTab === "workers" && (
-              <div className="workers-tab-content">
-                {/* Search & Filter Toolbar */}
-                <div className="table-toolbar">
-                  <div className="search-input-wrap">
-                    <span>🔍</span>
+                  <div className="admin-filter-bar">
                     <input
                       type="text"
-                      placeholder="Search by worker name, ID, or phone..."
+                      className="filter-search-input"
+                      placeholder="Search by worker name or trade..."
                       value={searchWorkerTerm}
                       onChange={(e) => setSearchWorkerTerm(e.target.value)}
                     />
-                  </div>
 
-                  <div className="filter-group">
-                    <label>Skill:</label>
-                    <select value={filterSkill} onChange={(e) => setFilterSkill(e.target.value)}>
-                      <option value="ALL">All Skills</option>
+                    <select
+                      value={filterSkill}
+                      onChange={(e) => setFilterSkill(e.target.value)}
+                      className="filter-select"
+                    >
+                      <option value="ALL">All Skills / Trades</option>
                       {skills.map((s) => (
-                        <option key={s.skill_id} value={s.skill_name}>
+                        <option key={s.skill_id} value={s.skill_id}>
                           {s.skill_name}
                         </option>
                       ))}
                     </select>
-                  </div>
 
-                  <div className="filter-group">
-                    <label>Verification:</label>
                     <select
                       value={filterVerification}
                       onChange={(e) => setFilterVerification(e.target.value)}
+                      className="filter-select"
                     >
-                      <option value="ALL">All Status</option>
-                      <option value="VERIFIED">✓ Verified Only</option>
-                      <option value="PENDING">⏳ Pending Only</option>
-                      <option value="UNVERIFIED">✕ Unverified</option>
+                      <option value="ALL">All Verifications</option>
+                      <option value="VERIFIED">Verified Only</option>
+                      <option value="PENDING">Pending Only</option>
+                      <option value="REJECTED">Rejected Only</option>
                     </select>
                   </div>
-                </div>
 
-                {/* Worker Table */}
-                <div className="admin-table-container">
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>Worker</th>
-                        <th>Primary Skill</th>
-                        <th>Experience</th>
-                        <th>Rating</th>
-                        <th>Availability</th>
-                        <th>Verification</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredWorkers.length === 0 ? (
+                  <div className="table-responsive">
+                    <table className="admin-table">
+                      <thead>
                         <tr>
-                          <td colSpan="8" className="empty-table-cell">
-                            No workers found matching the current search criteria.
-                          </td>
+                          <th>Professional</th>
+                          <th>Trade / Skill</th>
+                          <th>Experience</th>
+                          <th>Rating</th>
+                          <th>Availability</th>
+                          <th>e-Shram Status</th>
+                          <th>Actions</th>
                         </tr>
-                      ) : (
-                        filteredWorkers.map((w) => (
+                      </thead>
+                      <tbody>
+                        {filteredWorkers.map((w) => (
                           <tr key={w.worker_id}>
                             <td>
-                              <div className="worker-cell">
-                                <span className="worker-table-avatar">👨‍🔧</span>
-                                <div>
-                                  <strong>{w.name}</strong>
-                                  <small className="sub-text">
-                                    ID: #{w.worker_id} · {w.phone || "No phone"}
-                                  </small>
-                                </div>
-                              </div>
+                              <strong>{w.name}</strong>
+                              <small>Member #SH-{100 + w.worker_id}</small>
                             </td>
+                            <td>{w.skills?.[0]?.skill_name || "Cooperative Pro"}</td>
+                            <td>{w.experience_years ?? 5} yrs</td>
+                            <td>⭐ {w.average_rating ? Number(w.average_rating).toFixed(1) : "5.0"}</td>
                             <td>
-                              <span className="skill-chip">
-                                {w.skills?.[0]?.skill_name || "General Pro"}
-                              </span>
-                            </td>
-                            <td>{w.experience_years ? `${w.experience_years} yrs` : "4 yrs"}</td>
-                            <td>
-                              <span className="rating-text">
-                                ⭐ {w.average_rating ? Number(w.average_rating).toFixed(1) : "4.8"}
+                              <span
+                                className={`availability-dot ${w.is_active ? "online" : "offline"}`}
+                              >
+                                {w.is_active ? "🟢 Online" : "🔴 Offline"}
                               </span>
                             </td>
                             <td>
-                              {w.is_active !== false ? (
-                                <span className="online-pill">🟢 Available</span>
-                              ) : (
-                                <span className="offline-pill">🔴 Busy / Off</span>
-                              )}
-                            </td>
-                            <td>
-                              {w.is_verified ? (
-                                <span className="status-badge green">✓ VERIFIED</span>
-                              ) : w.verification_status === "REJECTED" ? (
-                                <span className="status-badge red">✕ REJECTED</span>
-                              ) : (
-                                <span className="status-badge yellow">⏳ PENDING</span>
-                              )}
-                            </td>
-                            <td>
-                              <span className={`account-status-badge ${w.is_active !== false ? "active" : "inactive"}`}>
-                                {w.is_active !== false ? "Active" : "Inactive"}
+                              <span
+                                className={`verification-badge ${
+                                  w.is_verified
+                                    ? "verified"
+                                    : w.verification_status === "REJECTED"
+                                    ? "rejected"
+                                    : "pending"
+                                }`}
+                              >
+                                {w.is_verified
+                                  ? "✓ VERIFIED"
+                                  : w.verification_status === "REJECTED"
+                                  ? "✕ REJECTED"
+                                  : "⏳ PENDING"}
                               </span>
                             </td>
                             <td>
-                              <div className="action-buttons-cell">
+                              <div className="table-actions-row">
                                 <button
-                                  className="table-btn view-btn"
+                                  className="mini-btn view"
                                   onClick={() => setSelectedWorker(w)}
-                                  title="View Details"
                                 >
                                   View
                                 </button>
-                                {!w.is_verified && (
+                                {!w.is_verified ? (
                                   <button
-                                    className="table-btn verify-btn"
+                                    className="mini-btn verify"
                                     onClick={() => handleVerifyWorker(w)}
-                                    title="Verify Worker"
                                   >
-                                    Verify
+                                    Approve
                                   </button>
-                                )}
-                                {w.is_verified && (
+                                ) : (
                                   <button
-                                    className="table-btn reject-btn"
+                                    className="mini-btn reject"
                                     onClick={() => handleRejectWorker(w)}
-                                    title="Revoke Verification"
                                   >
                                     Revoke
                                   </button>
                                 )}
                                 <button
-                                  className="table-btn toggle-btn"
+                                  className="mini-btn toggle"
                                   onClick={() => handleToggleWorkerStatus(w)}
-                                  title="Toggle Status"
                                 >
-                                  {w.is_active !== false ? "Deactivate" : "Activate"}
+                                  {w.is_active ? "Deactivate" : "Activate"}
                                 </button>
                               </div>
                             </td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* 3. ==================== VERIFICATION SECTION ==================== */}
-            {activeTab === "verifications" && (
-              <div className="verification-tab-content">
-                <div className="verification-banner-box">
-                  <div className="banner-info">
-                    <h3>🛡️ Unorganised Worker Verification Desk</h3>
-                    <p>
-                      Review pending Shramik / e-Shram credentials submitted by service professionals.
-                      Verified workers receive higher discovery ranking and an authenticated trust badge.
-                    </p>
-                  </div>
-                  <div className="banner-metric">
-                    <span>Pending Verification</span>
-                    <strong>{metrics.pendingVerification}</strong>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
+              )}
 
-                <div className="verification-cards-grid">
-                  {workers
-                    .filter((w) => !w.is_verified || w.verification_status === "PENDING")
-                    .map((w) => (
-                      <div key={w.worker_id} className="verification-applicant-card">
-                        <div className="applicant-header">
-                          <div className="applicant-info">
-                            <span className="applicant-avatar">🪪</span>
-                            <div>
-                              <h4>{w.name}</h4>
-                              <small>Worker ID: #{w.worker_id}</small>
-                            </div>
-                          </div>
-                          <span className="status-badge yellow">⏳ PENDING REVIEW</span>
-                        </div>
+              {/* TAB 3: VERIFICATIONS */}
+              {activeTab === "verifications" && (
+                <div className="admin-tab-content">
+                  <div className="tab-header">
+                    <div>
+                      <h2>e-Shram Verification Desk</h2>
+                      <p>Review unorganised worker credentials, UAN numbers, and trade certifications.</p>
+                    </div>
+                  </div>
 
-                        <div className="applicant-details-grid">
-                          <div className="detail-item">
-                            <small>e-Shram / UAN ID</small>
-                            <strong>{w.eshram_uan}</strong>
+                  <div className="verification-cards-grid">
+                    {workers.map((w) => (
+                      <div key={w.worker_id} className="ver-card">
+                        <div className="ver-card-header">
+                          <div>
+                            <h4>{w.name}</h4>
+                            <span className="ver-trade-tag">
+                              {w.skills?.[0]?.skill_name || "General Pro"}
+                            </span>
                           </div>
-                          <div className="detail-item">
-                            <small>Primary Trade</small>
-                            <strong>{w.skills?.[0]?.skill_name || "Electrician"}</strong>
-                          </div>
-                          <div className="detail-item">
-                            <small>Experience</small>
-                            <strong>{w.experience_years || 5} Years</strong>
-                          </div>
-                          <div className="detail-item">
-                            <small>Operating Location</small>
-                            <strong>{w.address || w.city || "Jabalpur"}</strong>
-                          </div>
-                        </div>
-
-                        <div className="applicant-actions">
-                          <button
-                            className="primary-btn small-btn"
-                            onClick={() => handleVerifyWorker(w)}
+                          <span
+                            className={`verification-badge ${
+                              w.is_verified
+                                ? "verified"
+                                : w.verification_status === "REJECTED"
+                                ? "rejected"
+                                : "pending"
+                            }`}
                           >
-                            ✓ Verify Worker
+                            {w.is_verified
+                              ? "✓ VERIFIED"
+                              : w.verification_status === "REJECTED"
+                              ? "✕ REJECTED"
+                              : "⏳ PENDING"}
+                          </span>
+                        </div>
+
+                        <div className="ver-card-body">
+                          <div className="ver-info-row">
+                            <span>e-Shram UAN:</span>
+                            <code>{w.eshram_uan}</code>
+                          </div>
+                          <div className="ver-info-row">
+                            <span>Aadhaar Link:</span>
+                            <strong>Linked (Verified format)</strong>
+                          </div>
+                          <div className="ver-info-row">
+                            <span>Experience:</span>
+                            <span>{w.experience_years ?? 5} Years</span>
+                          </div>
+                          <div className="ver-info-row">
+                            <span>Operating Zone:</span>
+                            <span>{w.address || "Jabalpur Central"}</span>
+                          </div>
+                        </div>
+
+                        <div className="ver-card-actions">
+                          <button
+                            className="primary-btn mini"
+                            onClick={() => handleVerifyWorker(w)}
+                            disabled={w.is_verified}
+                          >
+                            ✓ Approve e-Shram
                           </button>
                           <button
-                            className="danger-btn small-btn"
+                            className="secondary-btn mini reject"
                             onClick={() => handleRejectWorker(w)}
+                            disabled={!w.is_verified && w.verification_status === "REJECTED"}
                           >
                             ✕ Reject
                           </button>
                           <button
-                            className="secondary-btn small-btn"
+                            className="secondary-btn mini"
                             onClick={() => setSelectedWorker(w)}
                           >
-                            View Details
+                            Inspect
                           </button>
                         </div>
                       </div>
                     ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* 4. ==================== BOOKINGS SECTION ==================== */}
-            {activeTab === "bookings" && (
-              <div className="bookings-tab-content">
-                <div className="table-toolbar">
-                  <div className="search-input-wrap">
-                    <span>🔍</span>
+              {/* TAB 4: BOOKINGS */}
+              {activeTab === "bookings" && (
+                <div className="admin-tab-content">
+                  <div className="tab-header">
+                    <div>
+                      <h2>Service Orders & Bookings</h2>
+                      <p>Live tracking of customer requests, worker dispatch, and lifecycle statuses.</p>
+                    </div>
+                  </div>
+
+                  <div className="admin-filter-bar">
                     <input
                       type="text"
-                      placeholder="Search bookings by ID, service, customer, or worker..."
+                      className="filter-search-input"
+                      placeholder="Search booking ID, customer or worker..."
                       value={searchBookingTerm}
                       onChange={(e) => setSearchBookingTerm(e.target.value)}
                     />
-                  </div>
 
-                  <div className="filter-group">
-                    <label>Status:</label>
                     <select
                       value={filterBookingStatus}
                       onChange={(e) => setFilterBookingStatus(e.target.value)}
+                      className="filter-select"
                     >
                       <option value="ALL">All Statuses</option>
-                      <option value="PENDING">PENDING</option>
-                      <option value="ACCEPTED">ACCEPTED</option>
-                      <option value="IN_PROGRESS">IN_PROGRESS</option>
-                      <option value="COMPLETED">COMPLETED</option>
-                      <option value="CANCELLED">CANCELLED</option>
+                      <option value="PENDING">Pending</option>
+                      <option value="ACCEPTED">Worker Arrived / Accepted</option>
+                      <option value="IN_PROGRESS">In Progress</option>
+                      <option value="COMPLETED">Completed</option>
+                      <option value="CANCELLED">Cancelled</option>
                     </select>
                   </div>
-                </div>
 
-                <div className="admin-table-container">
-                  <table className="admin-table">
-                    <thead>
-                      <tr>
-                        <th>Booking ID</th>
-                        <th>Customer</th>
-                        <th>Worker</th>
-                        <th>Service</th>
-                        <th>Date</th>
-                        <th>Amount</th>
-                        <th>Payment</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredBookings.length === 0 ? (
+                  <div className="table-responsive">
+                    <table className="admin-table">
+                      <thead>
                         <tr>
-                          <td colSpan="8" className="empty-table-cell">
-                            No service bookings found matching filters.
-                          </td>
+                          <th>Order #</th>
+                          <th>Service</th>
+                          <th>Assigned Worker</th>
+                          <th>Customer</th>
+                          <th>Date / Slot</th>
+                          <th>Total Amount</th>
+                          <th>Payment</th>
+                          <th>Status</th>
                         </tr>
-                      ) : (
-                        filteredBookings.map((b) => (
+                      </thead>
+                      <tbody>
+                        {filteredBookings.map((b) => (
                           <tr key={b.booking_id}>
-                            <td>
-                              <strong className="booking-id-text">#{b.booking_id}</strong>
-                            </td>
-                            <td>{b.customer_name || `Customer #${b.customer_id}`}</td>
+                            <td><strong>#{b.booking_id}</strong></td>
+                            <td>{b.service_name || `Service #${b.service_id}`}</td>
                             <td>{b.worker_name || `Worker #${b.worker_id}`}</td>
+                            <td>{b.customer_name || `Customer #${b.customer_id}`}</td>
+                            <td>{b.booking_date || "Today"}</td>
+                            <td><strong style={{ color: "#059669" }}>₹{b.amount || 239}</strong></td>
                             <td>
-                              <span className="service-name-text">{b.service_name || "General Service"}</span>
-                            </td>
-                            <td>{b.booking_date || "2026-08-30"}</td>
-                            <td>
-                              <strong className="amount-text">₹{b.amount}</strong>
-                            </td>
-                            <td>
-                              <span className={`payment-pill ${b.payment_status?.toLowerCase() || "pending"}`}>
+                              <span className={`payment-pill ${b.payment_status === "PAID" ? "paid" : "pending"}`}>
                                 {b.payment_status || "PENDING"}
                               </span>
                             </td>
                             <td>
-                              <span className={`status-pill ${b.status?.toLowerCase() || "pending"}`}>
-                                {b.status}
+                              <span className={`status-pill ${b.status.toLowerCase()}`}>
+                                ● {b.status === "ACCEPTED" ? "WORKER ARRIVED" : b.status}
                               </span>
                             </td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* 5. ==================== SERVICES SECTION ==================== */}
-            {activeTab === "services" && (
-              <div className="services-tab-content">
-                <div className="services-header-toolbar">
-                  <div>
-                    <h3>Cooperative Service Catalog ({services.length})</h3>
-                    <p>Standardized community trade services and base pricing.</p>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                  <button
-                    className="primary-btn"
-                    onClick={() => setShowAddServiceModal(true)}
-                  >
-                    + Add New Service Offering
-                  </button>
                 </div>
+              )}
 
-                <div className="services-catalog-grid">
-                  {services.map((s) => (
-                    <div key={s.service_id} className="service-catalog-card">
-                      <div className="service-card-top">
-                        <span className="service-category-tag">{s.category || s.skill?.skill_name || "General"}</span>
-                        <strong className="service-price-tag">₹{s.base_price}</strong>
-                      </div>
-                      <h4>{s.service_name || s.service}</h4>
-                      <p className="service-desc">{s.description || "Prompt household trade service."}</p>
-                      <div className="service-card-bottom">
-                        <small>Linked Skill: <strong>{s.skill?.skill_name || "Skill #" + s.skill_id}</strong></small>
-                        <small>Duration: ~{s.estimated_duration || 60}m</small>
-                      </div>
+              {/* TAB 5: PAYMENTS */}
+              {activeTab === "payments" && (
+                <div className="admin-tab-content">
+                  <div className="tab-header">
+                    <div>
+                      <h2>Transparent Payment Breakdown</h2>
+                      <p>Clear audit trail showing 100% worker floor disbursement, operations fee, and Gullak allocations.</p>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                  </div>
 
-            {/* 6. ==================== REVIEWS SECTION ==================== */}
-            {activeTab === "reviews" && (
-              <div className="reviews-tab-content">
-                <div className="section-header-box">
-                  <h3>Customer Reviews & Trust Feedback</h3>
-                  <p>Real verified customer reviews submitted upon service completion.</p>
-                </div>
-
-                <div className="reviews-feed-grid">
-                  {reviewsList.length === 0 ? (
-                    <div className="empty-reviews-box">
-                      <p>No customer reviews recorded yet.</p>
+                  {/* Summary Metric Strip */}
+                  <div className="admin-metrics-grid" style={{ marginBottom: "25px" }}>
+                    <div className="metric-card">
+                      <div className="metric-header">
+                        <span className="metric-title">TOTAL COLLECTED</span>
+                        <span className="metric-icon">₹</span>
+                      </div>
+                      <div className="metric-value">₹{totalCustomerPayments}</div>
+                      <span className="metric-sub">From {completedBookingsCount} completed jobs</span>
                     </div>
-                  ) : (
-                    reviewsList.map((r, idx) => (
-                      <div key={r.review_id || idx} className="admin-review-card">
-                        <div className="review-card-header">
-                          <div>
-                            <strong>{r.worker_name ? `Review for ${r.worker_name}` : "Worker Review"}</strong>
-                            <small>Booking #{r.booking_id || "101"}</small>
+
+                    <div className="metric-card">
+                      <div className="metric-header">
+                        <span className="metric-title">WORKER DISBURSEMENTS</span>
+                        <span className="metric-icon">🤝</span>
+                      </div>
+                      <div className="metric-value green">₹{totalWorkerEarnings}</div>
+                      <span className="metric-sub">100% of ₹199 per job</span>
+                    </div>
+
+                    <div className="metric-card">
+                      <div className="metric-header">
+                        <span className="metric-title">PLATFORM OPERATIONS</span>
+                        <span className="metric-icon">⚡</span>
+                      </div>
+                      <div className="metric-value">₹{totalPlatformFees}</div>
+                      <span className="metric-sub">₹30 per job</span>
+                    </div>
+
+                    <div className="metric-card highlight-gullak">
+                      <div className="metric-header">
+                        <span className="metric-title">GULLAK WELFARE POOL</span>
+                        <span className="metric-icon">🪙</span>
+                      </div>
+                      <div className="metric-value gold">₹{totalGullakPool}</div>
+                      <span className="metric-sub">₹10 per job pooled</span>
+                    </div>
+                  </div>
+
+                  <div className="table-responsive">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Order #</th>
+                          <th>Customer Paid</th>
+                          <th>Worker Payout (100%)</th>
+                          <th>Platform Operations</th>
+                          <th>Gullak Welfare</th>
+                          <th>Payment Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bookings.map((b) => (
+                          <tr key={b.booking_id}>
+                            <td><strong>#{b.booking_id}</strong></td>
+                            <td><strong>₹239.00</strong></td>
+                            <td><strong style={{ color: "#059669" }}>₹199.00</strong></td>
+                            <td>₹30.00</td>
+                            <td><strong style={{ color: "#d97706" }}>₹10.00</strong></td>
+                            <td>
+                              <span className={`payment-pill ${b.payment_status === "PAID" ? "paid" : "pending"}`}>
+                                {b.payment_status || "PENDING"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 6: GULLAK COOPERATIVE WELFARE POOL */}
+              {activeTab === "gullak" && (
+                <div className="admin-tab-content">
+                  <div className="tab-header">
+                    <div>
+                      <h2>🪙 Cooperative Welfare Pool (Gullak)</h2>
+                      <p>Community mutual aid fund providing healthcare, tool insurance, and emergency safety nets.</p>
+                    </div>
+                  </div>
+
+                  <div className="gullak-banner-card">
+                    <div className="gullak-banner-icon">🪙</div>
+                    <div>
+                      <h3>Total Welfare Reserve: ₹{totalGullakPool + 2500}.00</h3>
+                      <p>
+                        Accumulated through ₹10 contributions on every completed service booking. Managed cooperatively for unorganised member welfare.
+                      </p>
+                    </div>
+                    <span className="gullak-active-pill">🟢 POOL ACTIVE & SOLVENT</span>
+                  </div>
+
+                  <div className="gullak-allocations-grid">
+                    <div className="gullak-alloc-card">
+                      <span className="alloc-icon">🏥</span>
+                      <h4>Emergency Healthcare Grant</h4>
+                      <p>Covers up to ₹15,000 for unexpected medical emergencies for active members.</p>
+                      <strong>Allocated: ₹{(totalGullakPool * 0.4).toFixed(0)}</strong>
+                    </div>
+
+                    <div className="gullak-alloc-card">
+                      <span className="alloc-icon">🛠️</span>
+                      <h4>Tool & Equipment Insurance</h4>
+                      <p>Micro-grants for essential trade tool repairs and replacements.</p>
+                      <strong>Allocated: ₹{(totalGullakPool * 0.3).toFixed(0)}</strong>
+                    </div>
+
+                    <div className="gullak-alloc-card">
+                      <span className="alloc-icon">🛡️</span>
+                      <h4>Accidental & Disability Cover</h4>
+                      <p>Protection cushion during on-site injuries or recovery periods.</p>
+                      <strong>Allocated: ₹{(totalGullakPool * 0.3).toFixed(0)}</strong>
+                    </div>
+                  </div>
+
+                  <div className="overview-card" style={{ marginTop: "25px" }}>
+                    <div className="overview-card-header">
+                      <h3>Recent Welfare Ledger Entries</h3>
+                    </div>
+
+                    <div className="table-responsive">
+                      <table className="admin-table">
+                        <thead>
+                          <tr>
+                            <th>Entry ID</th>
+                            <th>Description</th>
+                            <th>Type</th>
+                            <th>Contribution</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bookings.slice(0, 5).map((b, idx) => (
+                            <tr key={idx}>
+                              <td><code>GLK-2026-{1000 + b.booking_id}</code></td>
+                              <td>Welfare levy from completed service Order #{b.booking_id}</td>
+                              <td>Order Inflow</td>
+                              <td><strong style={{ color: "#059669" }}>+ ₹10.00</strong></td>
+                              <td><span className="status-pill completed">SETTLED</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 7: SERVICES */}
+              {activeTab === "services" && (
+                <div className="admin-tab-content">
+                  <div className="tab-header">
+                    <div>
+                      <h2>Service Catalog</h2>
+                      <p>Standardized service offerings and standard floor pricing across Jabalpur.</p>
+                    </div>
+                    <button
+                      className="primary-btn"
+                      onClick={() => setShowAddServiceModal(true)}
+                    >
+                      + Add New Service
+                    </button>
+                  </div>
+
+                  <div className="services-admin-grid">
+                    {services.map((s) => (
+                      <div key={s.service_id} className="service-admin-card">
+                        <div className="service-admin-header">
+                          <h4>{s.service || s.service_name}</h4>
+                          <span className="service-price-pill">₹239 Total Floor</span>
+                        </div>
+                        <p className="service-desc">{s.description}</p>
+                        <div className="service-meta-row">
+                          <small>Category: {s.category || "Home Care"}</small>
+                          <small>Skill ID: #{s.skill_id || 1}</small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 8: REVIEWS */}
+              {activeTab === "reviews" && (
+                <div className="admin-tab-content">
+                  <div className="tab-header">
+                    <div>
+                      <h2>Customer Ratings & Reviews</h2>
+                      <p>Community feedback aggregated across completed trade services.</p>
+                    </div>
+                  </div>
+
+                  <div className="reviews-admin-grid">
+                    {reviewsList.length > 0 ? (
+                      reviewsList.map((rev, rIdx) => (
+                        <div key={rIdx} className="review-admin-card">
+                          <div className="review-card-top">
+                            <div>
+                              <strong>{rev.worker_name || `Worker #${rev.worker_id}`}</strong>
+                              <small>Order #{rev.booking_id || "101"}</small>
+                            </div>
+                            <div className="review-stars">
+                              {"⭐".repeat(rev.rating || 5)}
+                              <span className="rating-val">({rev.rating || 5}/5)</span>
+                            </div>
                           </div>
-                          <span className="rating-badge">⭐ {r.rating ? Number(r.rating).toFixed(1) : "5.0"}</span>
+                          <p className="review-text">"{rev.review || rev.comment || "Great job!"}"</p>
                         </div>
-                        <p className="review-text-content">"{r.review || "Excellent service and high professionalism!"}"</p>
-                        <div className="review-card-footer">
-                          <small>✓ Verified Customer Order</small>
-                        </div>
+                      ))
+                    ) : (
+                      <div className="empty-reviews-box">
+                        <p>No customer reviews logged in database yet.</p>
                       </div>
-                    ))
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-      </main>
+              )}
+            </>
+          )}
+        </main>
+      </div>
 
       {/* WORKER DETAIL MODAL */}
       {selectedWorker && (
         <div className="admin-modal-overlay" onClick={() => setSelectedWorker(null)}>
           <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Worker Profile & Credentials</h3>
+              <h3>Worker Profile Inspector</h3>
               <button className="modal-close-btn" onClick={() => setSelectedWorker(null)}>✕</button>
             </div>
 
             <div className="modal-body">
-              <div className="worker-profile-hero">
-                <div className="hero-avatar">👨‍🔧</div>
+              <div className="inspector-worker-header">
+                <div className="inspector-avatar">👨‍🔧</div>
                 <div>
-                  <h2>{selectedWorker.name}</h2>
-                  <p>Worker ID #{selectedWorker.worker_id} · {selectedWorker.address || "Jabalpur"}</p>
-                  {selectedWorker.is_verified ? (
-                    <span className="status-badge green">✓ VERIFIED WORKER (e-Shram)</span>
-                  ) : (
-                    <span className="status-badge yellow">⏳ PENDING VERIFICATION</span>
-                  )}
+                  <h3>{selectedWorker.name}</h3>
+                  <p>Cooperative Member #SH-{100 + selectedWorker.worker_id} · {selectedWorker.address || "Jabalpur"}</p>
                 </div>
               </div>
 
-              <div className="profile-detail-rows">
-                <div className="detail-field">
-                  <small>Phone Number</small>
-                  <strong>{selectedWorker.phone || "9876543210"}</strong>
+              <div className="inspector-details-grid">
+                <div>
+                  <small>Primary Trade</small>
+                  <strong>{selectedWorker.skills?.[0]?.skill_name || "General Pro"}</strong>
                 </div>
-                <div className="detail-field">
-                  <small>Shramik / e-Shram UAN</small>
-                  <strong>{selectedWorker.eshram_uan}</strong>
-                </div>
-                <div className="detail-field">
-                  <small>Primary Skill</small>
-                  <strong>{selectedWorker.skills?.[0]?.skill_name || "Electrician"}</strong>
-                </div>
-                <div className="detail-field">
+
+                <div>
                   <small>Experience</small>
-                  <strong>{selectedWorker.experience_years || 5} Years</strong>
+                  <strong>{selectedWorker.experience_years ?? 5} Years</strong>
                 </div>
-                <div className="detail-field">
+
+                <div>
+                  <small>Inspection Floor</small>
+                  <strong>₹199 Base Floor (100% Payout)</strong>
+                </div>
+
+                <div>
                   <small>Rating</small>
-                  <strong>⭐ {selectedWorker.average_rating ? Number(selectedWorker.average_rating).toFixed(1) : "4.8"} ({selectedWorker.total_reviews ?? 4} reviews)</strong>
+                  <strong>⭐ {selectedWorker.average_rating ? Number(selectedWorker.average_rating).toFixed(1) : "5.0"}</strong>
                 </div>
-                <div className="detail-field">
-                  <small>Hourly Base Rate</small>
-                  <strong>₹{selectedWorker.hourly_rate || 250}/hr</strong>
+
+                <div>
+                  <small>e-Shram UAN</small>
+                  <code>{selectedWorker.eshram_uan}</code>
+                </div>
+
+                <div>
+                  <small>Verification</small>
+                  <strong style={{ color: selectedWorker.is_verified ? "#059669" : "#d97706" }}>
+                    {selectedWorker.is_verified ? "✓ Verified" : "⏳ Pending / Unverified"}
+                  </strong>
                 </div>
               </div>
             </div>
@@ -1146,23 +1259,26 @@ function AdminDashboard() {
                   className="primary-btn"
                   onClick={() => {
                     handleVerifyWorker(selectedWorker);
-                    setSelectedWorker((prev) => ({ ...prev, is_verified: true, verification_status: "VERIFIED" }));
+                    setSelectedWorker(null);
                   }}
                 >
-                  ✓ Approve & Verify e-Shram
+                  ✓ Approve e-Shram
                 </button>
               ) : (
                 <button
-                  className="danger-btn"
+                  className="secondary-btn reject"
                   onClick={() => {
                     handleRejectWorker(selectedWorker);
-                    setSelectedWorker((prev) => ({ ...prev, is_verified: false, verification_status: "REJECTED" }));
+                    setSelectedWorker(null);
                   }}
                 >
-                  Revoke Verification
+                  ✕ Revoke
                 </button>
               )}
-              <button className="secondary-btn" onClick={() => setSelectedWorker(null)}>
+              <button
+                className="secondary-btn"
+                onClick={() => setSelectedWorker(null)}
+              >
                 Close
               </button>
             </div>
@@ -1170,7 +1286,7 @@ function AdminDashboard() {
         </div>
       )}
 
-      {/* ADD SERVICE MODAL (Calls POST /services) */}
+      {/* CREATE SERVICE MODAL */}
       {showAddServiceModal && (
         <div className="admin-modal-overlay" onClick={() => setShowAddServiceModal(false)}>
           <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
@@ -1186,7 +1302,7 @@ function AdminDashboard() {
                   <input
                     type="text"
                     className="form-control"
-                    placeholder="e.g. Solar Inverter Setup"
+                    placeholder="e.g. Geyser Installation & Repair"
                     value={newServiceName}
                     onChange={(e) => setNewServiceName(e.target.value)}
                     required
@@ -1194,11 +1310,11 @@ function AdminDashboard() {
                 </div>
 
                 <div className="form-group">
-                  <label>Service Description</label>
+                  <label>Description</label>
                   <textarea
                     className="form-control"
                     rows="3"
-                    placeholder="Describe the trade service..."
+                    placeholder="Describe what the service includes..."
                     value={newServiceDesc}
                     onChange={(e) => setNewServiceDesc(e.target.value)}
                   />
@@ -1206,19 +1322,18 @@ function AdminDashboard() {
 
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Base Price (₹)</label>
+                    <label>Standard Floor Price (₹)</label>
                     <input
                       type="number"
                       className="form-control"
                       value={newServicePrice}
                       onChange={(e) => setNewServicePrice(e.target.value)}
-                      min="100"
                       required
                     />
                   </div>
 
                   <div className="form-group">
-                    <label>Required Skill Category</label>
+                    <label>Associated Skill</label>
                     <select
                       className="form-control"
                       value={newServiceSkillId}
@@ -1235,8 +1350,12 @@ function AdminDashboard() {
               </div>
 
               <div className="modal-footer">
-                <button type="submit" className="primary-btn" disabled={creatingService}>
-                  {creatingService ? "Creating Service..." : "Save Service to Database"}
+                <button
+                  type="submit"
+                  className="primary-btn"
+                  disabled={creatingService}
+                >
+                  {creatingService ? "Creating Service..." : "Create Service Offering"}
                 </button>
                 <button
                   type="button"

@@ -542,6 +542,16 @@ function App() {
         />
 
         <Route
+          path="/admin/payments"
+          element={<AdminDashboard />}
+        />
+
+        <Route
+          path="/admin/gullak"
+          element={<AdminDashboard />}
+        />
+
+        <Route
           path="/admin/services"
           element={<AdminDashboard />}
         />

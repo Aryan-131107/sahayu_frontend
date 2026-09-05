@@ -1,43 +1,39 @@
 import "./App.css";
 
-function ServiceTimeline({ status = "PENDING", bookingDate = "", amount = 0 }) {
+function ServiceTimeline({ status = "PENDING", bookingDate = "", amount = 239 }) {
   const steps = [
     {
       id: 1,
+      name: "BOOKED",
       title: "Booking Requested",
-      subtitle: "Service request placed and sent to cooperative network",
+      subtitle: "Service request placed and broadcast to nearby cooperative workers",
       icon: "📋",
       isCompleted: ["PENDING", "ACCEPTED", "IN_PROGRESS", "COMPLETED"].includes(status),
       isActive: status === "PENDING",
     },
     {
       id: 2,
-      title: "Worker Accepted",
-      subtitle: "Verified professional accepted your service order",
-      icon: "🤝",
+      name: "WORKER ARRIVED",
+      title: "Worker Accepted & Dispatched",
+      subtitle: "Verified worker arrived at location and requested Start OTP",
+      icon: "👨‍🔧",
       isCompleted: ["ACCEPTED", "IN_PROGRESS", "COMPLETED"].includes(status),
       isActive: status === "ACCEPTED",
     },
     {
       id: 3,
-      title: "Worker On The Way",
-      subtitle: "Worker dispatched to your Jabalpur address with tools",
-      icon: "🚗",
-      isCompleted: ["IN_PROGRESS", "COMPLETED"].includes(status),
-      isActive: status === "ACCEPTED" || status === "IN_PROGRESS",
-    },
-    {
-      id: 4,
-      title: "Worker Arrived & In Progress",
-      subtitle: "Service execution and repair currently underway",
+      name: "IN PROGRESS",
+      title: "Service In Progress",
+      subtitle: "Repair & inspection currently underway with quality checks",
       icon: "🛠️",
       isCompleted: ["IN_PROGRESS", "COMPLETED"].includes(status),
       isActive: status === "IN_PROGRESS",
     },
     {
-      id: 5,
+      id: 4,
+      name: "COMPLETED",
       title: "Service Completed",
-      subtitle: "Job completed, satisfaction verified, payment settled",
+      subtitle: "Job verified with End OTP, fair payout settled & 3-Day Guarantee active",
       icon: "⭐",
       isCompleted: status === "COMPLETED",
       isActive: status === "COMPLETED",
@@ -50,7 +46,7 @@ function ServiceTimeline({ status = "PENDING", bookingDate = "", amount = 0 }) {
         <div className="timeline-header">
           <div>
             <span className="timeline-badge error">✕ BOOKING CANCELLED</span>
-            <h3>Service Journey Terminated</h3>
+            <h3>Service Order Terminated</h3>
             <p>This booking has been cancelled and is no longer active.</p>
           </div>
         </div>
@@ -58,9 +54,9 @@ function ServiceTimeline({ status = "PENDING", bookingDate = "", amount = 0 }) {
     );
   }
 
-  // Calculate progress percent
-  let progressPct = 15;
-  if (status === "ACCEPTED") progressPct = 45;
+  // Calculate progress percentage for 4 steps
+  let progressPct = 20;
+  if (status === "ACCEPTED") progressPct = 50;
   if (status === "IN_PROGRESS") progressPct = 80;
   if (status === "COMPLETED") progressPct = 100;
 
@@ -68,19 +64,19 @@ function ServiceTimeline({ status = "PENDING", bookingDate = "", amount = 0 }) {
     <div className="service-timeline-card">
       <div className="timeline-header">
         <div>
-          <span className="timeline-badge">🚗 LIVE SERVICE JOURNEY</span>
-          <h2>Real-Time Booking Status</h2>
+          <span className="timeline-badge">🚗 LIVE SERVICE STATUS</span>
+          <h2>Service Progress Tracker</h2>
           <p>
-            Track your service lifecycle from request to completion.
-            {bookingDate ? ` Scheduled for ${bookingDate}.` : ""}
+            Real-time status updates synchronized with your assigned professional.
+            {bookingDate ? ` Order Date: ${bookingDate}.` : ""}
           </p>
         </div>
 
         <div className="timeline-status-pill-box">
           <span className={`status-pill ${status.toLowerCase()}`}>
-            ● {status}
+            ● {status === "ACCEPTED" ? "WORKER ARRIVED" : status}
           </span>
-          {amount > 0 && <span className="amount-pill">₹{amount}</span>}
+          <span className="amount-pill">₹{amount || 239}</span>
         </div>
       </div>
 
@@ -92,8 +88,8 @@ function ServiceTimeline({ status = "PENDING", bookingDate = "", amount = 0 }) {
         />
       </div>
 
-      {/* Step Items */}
-      <div className="timeline-steps-grid">
+      {/* 4 Step Items: BOOKED -> WORKER ARRIVED -> IN PROGRESS -> COMPLETED */}
+      <div className="timeline-steps-grid four-steps">
         {steps.map((step) => {
           let stepClass = "timeline-step-item";
           if (step.isCompleted) stepClass += " completed";
@@ -112,6 +108,7 @@ function ServiceTimeline({ status = "PENDING", bookingDate = "", amount = 0 }) {
               </div>
 
               <div className="timeline-step-text">
+                <span className="step-tag-name">{step.name}</span>
                 <div className="step-title-row">
                   <span className="step-icon">{step.icon}</span>
                   <h4>{step.title}</h4>
