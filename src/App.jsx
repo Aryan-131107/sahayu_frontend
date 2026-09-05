@@ -527,6 +527,11 @@ function App() {
         />
 
         <Route
+          path="/admin/*"
+          element={<AdminDashboard />}
+        />
+
+        <Route
           path="/admin/workers"
           element={<AdminDashboard />}
         />
