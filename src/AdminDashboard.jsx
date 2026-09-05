@@ -11,6 +11,7 @@ import {
   getStoredVerification,
   setStoredVerification,
   getAllStoredVerifications,
+  getGullakSummary,
 } from "./api";
 import "./App.css";
 
@@ -18,9 +19,18 @@ function AdminDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Detect initial tab from path e.g. /admin/workers, /admin/verifications, /admin/payments, /admin/gullak, etc.
+  // Detect initial tab from URL path (e.g. /admin/workers, /admin/gullak, etc.)
   const pathSegment = location.pathname.split("/")[2] || "overview";
-  const validTabs = ["overview", "workers", "verifications", "bookings", "payments", "gullak", "services", "reviews"];
+  const validTabs = [
+    "overview",
+    "workers",
+    "verifications",
+    "bookings",
+    "payments",
+    "gullak",
+    "services",
+    "reviews",
+  ];
   const [activeTab, setActiveTab] = useState(
     validTabs.includes(pathSegment) ? pathSegment : "overview"
   );
@@ -39,6 +49,9 @@ function AdminDashboard() {
   const [bookings, setBookings] = useState([]);
   const [reviewsList, setReviewsList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [gullakLoading, setGullakLoading] = useState(false);
+  const [gullakError, setGullakError] = useState("");
+  const [gullakData, setGullakData] = useState(null);
   const [error, setError] = useState("");
   const [actionSuccess, setActionSuccess] = useState("");
 
@@ -60,42 +73,76 @@ function AdminDashboard() {
   const [searchBookingTerm, setSearchBookingTerm] = useState("");
   const [filterBookingStatus, setFilterBookingStatus] = useState("ALL");
 
-  // Fetch all initial data from backend
+  const loadGullakData = useCallback(async () => {
+    setGullakLoading(true);
+    setGullakError("");
+    try {
+      const summary = await getGullakSummary();
+      setGullakData(summary);
+    } catch (err) {
+      setGullakError(err.message || "Unable to load cooperative Gullak data.");
+    } finally {
+      setGullakLoading(false);
+    }
+  }, []);
+
+  // Fetch all initial data from backend with instant UI responsiveness
   const loadDashboardData = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      const [workersData, servicesData, skillsData, bookingsData] = await Promise.all([
-        getWorkers(false).catch(() => []),
-        getServices().catch(() => []),
-        getSkills().catch(() => []),
-        getCustomerBookings(1).catch(() => []),
-      ]);
+      const [workersData, servicesData, skillsData, bookingsData] =
+        await Promise.all([
+          getWorkers(false).catch(() => []),
+          getServices().catch(() => []),
+          getSkills().catch(() => []),
+          getCustomerBookings(1).catch(() => []),
+        ]);
 
       const storedVerifications = getAllStoredVerifications();
 
       // Merge verified states with live worker records
-      const mergedWorkers = (Array.isArray(workersData) ? workersData : []).map((w) => {
-        const stored = storedVerifications[w.worker_id] || getStoredVerification(w.worker_id);
-        const isVer = stored ? stored.status === "VERIFIED" : Boolean(w.is_verified);
-        const verStatus = stored ? stored.status : (w.is_verified ? "VERIFIED" : "UNVERIFIED");
-        const uan = stored?.uan || `98${String(w.worker_id).padStart(2, "0")}-4567-${1000 + w.worker_id}`;
-        return {
-          ...w,
-          is_verified: isVer,
-          verification_status: verStatus,
-          eshram_uan: uan,
-        };
-      });
+      const mergedWorkers = (Array.isArray(workersData) ? workersData : []).map(
+        (w) => {
+          const stored =
+            storedVerifications[w.worker_id] ||
+            getStoredVerification(w.worker_id);
+          const isVer = stored
+            ? stored.status === "VERIFIED"
+            : Boolean(w.is_verified);
+          const verStatus = stored
+            ? stored.status
+            : w.is_verified
+            ? "VERIFIED"
+            : "UNVERIFIED";
+          const uan =
+            stored?.uan ||
+            `98${String(w.worker_id).padStart(2, "0")}-4567-${
+              1000 + w.worker_id
+            }`;
+          return {
+            ...w,
+            is_verified: isVer,
+            verification_status: verStatus,
+            eshram_uan: uan,
+          };
+        }
+      );
 
       setWorkers(mergedWorkers);
       setServices(Array.isArray(servicesData) ? servicesData : []);
       setSkills(Array.isArray(skillsData) ? skillsData : []);
       setBookings(Array.isArray(bookingsData) ? bookingsData : []);
 
-      // Load reviews for workers
-      const reviewPromises = mergedWorkers.slice(0, 8).map(async (w) => {
+      // Release main loading state immediately so UI is responsive
+      setLoading(false);
+
+      // Progressive fetch for Gullak & Reviews in background
+      loadGullakData();
+
+      // Background load reviews
+      const reviewPromises = mergedWorkers.slice(0, 6).map(async (w) => {
         try {
           const revRes = await getWorkerReviews(w.worker_id);
           if (revRes && Array.isArray(revRes.reviews)) {
@@ -111,14 +158,16 @@ function AdminDashboard() {
         }
       });
 
-      const allRev = await Promise.all(reviewPromises);
-      setReviewsList(allRev.flat());
+      Promise.all(reviewPromises)
+        .then((allRev) => {
+          setReviewsList(allRev.flat());
+        })
+        .catch(() => {});
     } catch (err) {
       setError(err.message || "Failed to load admin dashboard data.");
-    } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadGullakData]);
 
   useEffect(() => {
     let isMounted = true;
@@ -128,28 +177,45 @@ function AdminDashboard() {
         getServices().catch(() => []),
         getSkills().catch(() => []),
         getCustomerBookings(1).catch(() => []),
-      ]).then(async ([workersData, servicesData, skillsData, bookingsData]) => {
+      ]).then(([workersData, servicesData, skillsData, bookingsData]) => {
         if (!isMounted) return;
         const storedVerifications = getAllStoredVerifications();
-        const mergedWorkers = (Array.isArray(workersData) ? workersData : []).map((w) => {
-          const stored = storedVerifications[w.worker_id] || getStoredVerification(w.worker_id);
-          const isVer = stored ? stored.status === "VERIFIED" : Boolean(w.is_verified);
-          const verStatus = stored ? stored.status : (w.is_verified ? "VERIFIED" : "UNVERIFIED");
-          const uan = stored?.uan || `98${String(w.worker_id).padStart(2, "0")}-4567-${1000 + w.worker_id}`;
-          return {
-            ...w,
-            is_verified: isVer,
-            verification_status: verStatus,
-            eshram_uan: uan,
-          };
-        });
+        const mergedWorkers = (Array.isArray(workersData) ? workersData : []).map(
+          (w) => {
+            const stored =
+              storedVerifications[w.worker_id] ||
+              getStoredVerification(w.worker_id);
+            const isVer = stored
+              ? stored.status === "VERIFIED"
+              : Boolean(w.is_verified);
+            const verStatus = stored
+              ? stored.status
+              : w.is_verified
+              ? "VERIFIED"
+              : "UNVERIFIED";
+            const uan =
+              stored?.uan ||
+              `98${String(w.worker_id).padStart(2, "0")}-4567-${
+                1000 + w.worker_id
+              }`;
+            return {
+              ...w,
+              is_verified: isVer,
+              verification_status: verStatus,
+              eshram_uan: uan,
+            };
+          }
+        );
 
         setWorkers(mergedWorkers);
         setServices(Array.isArray(servicesData) ? servicesData : []);
         setSkills(Array.isArray(skillsData) ? skillsData : []);
         setBookings(Array.isArray(bookingsData) ? bookingsData : []);
+        setLoading(false);
 
-        const reviewPromises = mergedWorkers.slice(0, 8).map(async (w) => {
+        loadGullakData();
+
+        const reviewPromises = mergedWorkers.slice(0, 6).map(async (w) => {
           try {
             const revRes = await getWorkerReviews(w.worker_id);
             if (revRes && Array.isArray(revRes.reviews)) {
@@ -165,11 +231,11 @@ function AdminDashboard() {
           }
         });
 
-        const allRev = await Promise.all(reviewPromises);
-        if (isMounted) {
-          setReviewsList(allRev.flat());
-          setLoading(false);
-        }
+        Promise.all(reviewPromises)
+          .then((allRev) => {
+            if (isMounted) setReviewsList(allRev.flat());
+          })
+          .catch(() => {});
       }).catch((err) => {
         if (isMounted) {
           setError(err.message || "Failed to load admin dashboard data.");
@@ -181,17 +247,24 @@ function AdminDashboard() {
     return () => {
       isMounted = false;
     };
-  }, [isAdminAuthenticated]);
+  }, [isAdminAuthenticated, loadGullakData]);
 
   // Handle Admin Login
   const handleAdminLogin = (e) => {
     if (e) e.preventDefault();
-    if (adminPin === "admin" || adminPin === "sahayu2026" || adminPin === "1234" || adminPin === "") {
+    if (
+      adminPin === "admin" ||
+      adminPin === "sahayu2026" ||
+      adminPin === "1234" ||
+      adminPin === ""
+    ) {
       sessionStorage.setItem("sahayu_admin_auth", "true");
       setIsAdminAuthenticated(true);
       setAuthError("");
     } else {
-      setAuthError("Invalid credentials. (Hint: Use default 'admin' or 1-click Demo Unlock)");
+      setAuthError(
+        "Invalid credentials. (Hint: Use default 'admin' or 1-click Demo Unlock)"
+      );
     }
   };
 
@@ -213,11 +286,15 @@ function AdminDashboard() {
       await updateWorkerAvailability(workerItem.worker_id, newStatus);
       setWorkers((prev) =>
         prev.map((w) =>
-          w.worker_id === workerItem.worker_id ? { ...w, is_active: newStatus } : w
+          w.worker_id === workerItem.worker_id
+            ? { ...w, is_active: newStatus }
+            : w
         )
       );
       setActionSuccess(
-        `✓ ${workerItem.name} availability toggled to ${newStatus ? "ACTIVE" : "INACTIVE"}.`
+        `✓ ${workerItem.name} availability toggled to ${
+          newStatus ? "ACTIVE" : "INACTIVE"
+        }.`
       );
       setTimeout(() => setActionSuccess(""), 4000);
     } catch (err) {
@@ -242,7 +319,9 @@ function AdminDashboard() {
       )
     );
 
-    setActionSuccess(`✓ ${workerItem.name} has been approved and marked VERIFIED.`);
+    setActionSuccess(
+      `✓ ${workerItem.name} has been approved and marked VERIFIED.`
+    );
     setTimeout(() => setActionSuccess(""), 4000);
   };
 
@@ -276,7 +355,8 @@ function AdminDashboard() {
     try {
       const res = await createService({
         service: newServiceName.trim(),
-        description: newServiceDesc.trim() || "Standard cooperative home service.",
+        description:
+          newServiceDesc.trim() || "Standard cooperative home service.",
         base_price: parseFloat(newServicePrice) || 239,
         skill_id: parseInt(newServiceSkillId, 10) || 1,
       });
@@ -285,7 +365,9 @@ function AdminDashboard() {
       setShowAddServiceModal(false);
       setNewServiceName("");
       setNewServiceDesc("");
-      setActionSuccess(`✓ Service '${res.service || res.service_name}' added to catalog!`);
+      setActionSuccess(
+        `✓ Service '${res.service || res.service_name}' added to catalog!`
+      );
       setTimeout(() => setActionSuccess(""), 4000);
     } catch (err) {
       alert(`Failed to create service: ${err.message}`);
@@ -302,20 +384,25 @@ function AdminDashboard() {
   ).length;
   const activeWorkersCount = workers.filter((w) => w.is_active).length;
   const totalBookingsCount = bookings.length;
-  const completedBookingsCount = bookings.filter((b) => b.status === "COMPLETED").length;
+  const completedBookingsCount = bookings.filter(
+    (b) => b.status === "COMPLETED"
+  ).length;
 
   // Pricing Model: Customer Paid = ₹239, Worker Payout = ₹199 (100%), Platform Ops = ₹30, Gullak = ₹10
   const totalCustomerPayments = completedBookingsCount * 239;
   const totalWorkerEarnings = completedBookingsCount * 199;
   const totalPlatformFees = completedBookingsCount * 30;
-  const totalGullakPool = completedBookingsCount * 10;
+  const totalGullakPool = gullakData?.total_pool_balance !== undefined ? gullakData.total_pool_balance : completedBookingsCount * 10;
 
   // Filtered Workers List
   const filteredWorkers = useMemo(() => {
     return workers.filter((w) => {
-      const nameMatch = (w.name || "").toLowerCase().includes(searchWorkerTerm.toLowerCase());
+      const nameMatch = (w.name || "")
+        .toLowerCase()
+        .includes(searchWorkerTerm.toLowerCase());
       const skillName = (w.skills?.[0]?.skill_name || "").toLowerCase();
-      const termMatch = nameMatch || skillName.includes(searchWorkerTerm.toLowerCase());
+      const termMatch =
+        nameMatch || skillName.includes(searchWorkerTerm.toLowerCase());
 
       const skillMatch =
         filterSkill === "ALL" ||
@@ -324,8 +411,11 @@ function AdminDashboard() {
       const verMatch =
         filterVerification === "ALL" ||
         (filterVerification === "VERIFIED" && w.is_verified) ||
-        (filterVerification === "PENDING" && !w.is_verified && w.verification_status !== "REJECTED") ||
-        (filterVerification === "REJECTED" && w.verification_status === "REJECTED");
+        (filterVerification === "PENDING" &&
+          !w.is_verified &&
+          w.verification_status !== "REJECTED") ||
+        (filterVerification === "REJECTED" &&
+          w.verification_status === "REJECTED");
 
       return termMatch && skillMatch && verMatch;
     });
@@ -336,9 +426,14 @@ function AdminDashboard() {
     return bookings.filter((b) => {
       const term = searchBookingTerm.toLowerCase();
       const idMatch = String(b.booking_id).includes(term);
-      const custMatch = String(b.customer_id).includes(term) || (b.customer_name || "").toLowerCase().includes(term);
-      const workerMatch = String(b.worker_id).includes(term) || (b.worker_name || "").toLowerCase().includes(term);
-      const statusMatch = filterBookingStatus === "ALL" || b.status === filterBookingStatus;
+      const custMatch =
+        String(b.customer_id).includes(term) ||
+        (b.customer_name || "").toLowerCase().includes(term);
+      const workerMatch =
+        String(b.worker_id).includes(term) ||
+        (b.worker_name || "").toLowerCase().includes(term);
+      const statusMatch =
+        filterBookingStatus === "ALL" || b.status === filterBookingStatus;
 
       return (idMatch || custMatch || workerMatch) && statusMatch;
     });
@@ -347,13 +442,15 @@ function AdminDashboard() {
   // 1. Authorization Screen
   if (!isAdminAuthenticated) {
     return (
-      <div className="admin-login-page">
-        <div className="admin-login-card">
-          <div className="admin-lock-icon">🏛️</div>
+      <div className="admin-auth-page">
+        <div className="admin-auth-card">
+          <div className="admin-badge-icon">🏛️</div>
           <h2>Sahāyu Cooperative Admin</h2>
-          <p>Restricted access for Cooperative Governance & Welfare Desk.</p>
+          <p className="admin-auth-subtitle">
+            Restricted access for Cooperative Governance & Welfare Desk.
+          </p>
 
-          {authError && <div className="admin-auth-error">{authError}</div>}
+          {authError && <div className="auth-error-msg">{authError}</div>}
 
           <form onSubmit={handleAdminLogin}>
             <div className="form-group">
@@ -368,15 +465,15 @@ function AdminDashboard() {
               />
             </div>
 
-            <button type="submit" className="primary-btn full-btn">
+            <button type="submit" className="primary-btn admin-login-btn">
               Unlock Admin Portal →
             </button>
           </form>
 
-          <div style={{ marginTop: "16px", textAlign: "center" }}>
+          <div className="demo-unlock-box">
             <button
               type="button"
-              className="demo-quick-auth-btn"
+              className="quick-unlock-btn"
               onClick={() => {
                 sessionStorage.setItem("sahayu_admin_auth", "true");
                 setIsAdminAuthenticated(true);
@@ -388,7 +485,7 @@ function AdminDashboard() {
 
           <button
             className="back-link"
-            style={{ marginTop: "20px" }}
+            style={{ marginTop: "16px" }}
             onClick={() => navigate("/")}
           >
             ← Back to Home
@@ -399,237 +496,268 @@ function AdminDashboard() {
   }
 
   return (
-    <div className="admin-portal-wrapper">
-      {/* Top Header */}
-      <header className="admin-topbar">
-        <div className="admin-brand">
-          <div className="logo" onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
+    <div className="admin-layout">
+      {/* 2. Standard Admin Sidebar */}
+      <aside className="admin-sidebar">
+        <div className="admin-sidebar-header">
+          <div
+            className="logo"
+            onClick={() => navigate("/")}
+            style={{ cursor: "pointer" }}
+          >
             <span className="logo-icon">S</span>
             Sahāyu
           </div>
-          <span className="admin-tag">COOPERATIVE ADMIN</span>
+          <span className="coop-cluster-pill">🏛️ Jabalpur Cooperative Cluster</span>
         </div>
 
-        <div className="admin-header-actions">
+        {/* Sidebar Nav Items with Isolated Count Badges */}
+        <nav className="admin-nav-menu">
           <button
-            className="secondary-btn"
-            onClick={loadDashboardData}
-            title="Reload live database values"
+            className={`admin-nav-item ${activeTab === "overview" ? "active" : ""}`}
+            onClick={() => switchTab("overview")}
           >
-            🔄 Refresh
+            <span className="nav-icon">📊</span>
+            <span className="nav-label">Overview</span>
           </button>
-          <button className="secondary-btn" onClick={() => navigate("/")}>
-            View Website
+
+          <button
+            className={`admin-nav-item ${activeTab === "workers" ? "active" : ""}`}
+            onClick={() => switchTab("workers")}
+          >
+            <span className="nav-icon">👨‍🔧</span>
+            <span className="nav-label">Workers</span>
+            <span className="nav-count-badge">{totalWorkersCount}</span>
           </button>
-          <button className="logout-btn" onClick={handleAdminLogout}>
-            Logout ⎋
+
+          <button
+            className={`admin-nav-item ${
+              activeTab === "verifications" ? "active" : ""
+            }`}
+            onClick={() => switchTab("verifications")}
+          >
+            <span className="nav-icon">🛡️</span>
+            <span className="nav-label">Verifications</span>
+            {pendingVerificationsCount > 0 ? (
+              <span className="nav-alert-badge">{pendingVerificationsCount}</span>
+            ) : (
+              <span className="nav-count-badge">0</span>
+            )}
+          </button>
+
+          <button
+            className={`admin-nav-item ${activeTab === "bookings" ? "active" : ""}`}
+            onClick={() => switchTab("bookings")}
+          >
+            <span className="nav-icon">📋</span>
+            <span className="nav-label">Bookings</span>
+            <span className="nav-count-badge">{totalBookingsCount}</span>
+          </button>
+
+          <button
+            className={`admin-nav-item ${activeTab === "payments" ? "active" : ""}`}
+            onClick={() => switchTab("payments")}
+          >
+            <span className="nav-icon">💳</span>
+            <span className="nav-label">Payments</span>
+          </button>
+
+          <button
+            className={`admin-nav-item ${activeTab === "gullak" ? "active" : ""}`}
+            onClick={() => switchTab("gullak")}
+          >
+            <span className="nav-icon">🪙</span>
+            <span className="nav-label">Gullak Pool</span>
+          </button>
+
+          <button
+            className={`admin-nav-item ${activeTab === "services" ? "active" : ""}`}
+            onClick={() => switchTab("services")}
+          >
+            <span className="nav-icon">🛠️</span>
+            <span className="nav-label">Services</span>
+            <span className="nav-count-badge">{services.length}</span>
+          </button>
+
+          <button
+            className={`admin-nav-item ${activeTab === "reviews" ? "active" : ""}`}
+            onClick={() => switchTab("reviews")}
+          >
+            <span className="nav-icon">⭐</span>
+            <span className="nav-label">Reviews</span>
+            <span className="nav-count-badge">{reviewsList.length}</span>
+          </button>
+        </nav>
+
+        {/* Sidebar Footer */}
+        <div className="admin-sidebar-footer">
+          <div className="admin-user-info">
+            <span className="admin-avatar">👤</span>
+            <div>
+              <strong>Coop Admin</strong>
+              <small>Jabalpur Hub</small>
+            </div>
+          </div>
+          <button className="logout-btn" onClick={handleAdminLogout} title="Logout">
+            ⎋ Logout
           </button>
         </div>
-      </header>
+      </aside>
 
-      {/* Main Admin Layout */}
-      <div className="admin-layout-container">
-        {/* Sidebar Navigation */}
-        <aside className="admin-sidebar">
-          <nav className="admin-nav">
+      {/* 3. Main Content Area */}
+      <div className="admin-main-content">
+        {/* Top Header Bar */}
+        <header className="admin-topbar">
+          <div className="topbar-title">
+            <h1>
+              {activeTab === "overview" && "Platform Overview & Operations"}
+              {activeTab === "workers" && "Worker Registry & Credentials"}
+              {activeTab === "verifications" && "e-Shram Demo Verification Queue"}
+              {activeTab === "bookings" && "Live Service Bookings & Orders"}
+              {activeTab === "payments" && "Transparent Fee & Payout Division"}
+              {activeTab === "gullak" && "Cooperative Welfare Reserve (Gullak Pool)"}
+              {activeTab === "services" && "Standardized Service Catalog"}
+              {activeTab === "reviews" && "Customer Ratings & Feedback"}
+            </h1>
+            <p>Sahāyu Cooperative Governance & Unorganised Labour Protection Desk</p>
+          </div>
+
+          <div className="topbar-actions">
             <button
-              className={`nav-item ${activeTab === "overview" ? "active" : ""}`}
-              onClick={() => switchTab("overview")}
+              className="secondary-btn"
+              onClick={loadDashboardData}
+              title="Reload live database values"
             >
-              <span className="nav-icon">📊</span>
-              Overview
+              🔄 Refresh Data
             </button>
-
-            <button
-              className={`nav-item ${activeTab === "workers" ? "active" : ""}`}
-              onClick={() => switchTab("workers")}
-            >
-              <span className="nav-icon">👨‍🔧</span>
-              Workers
-              <span className="nav-badge">{totalWorkersCount}</span>
+            <button className="secondary-btn" onClick={() => navigate("/")}>
+              View Live Site
             </button>
+          </div>
+        </header>
 
-            <button
-              className={`nav-item ${activeTab === "verifications" ? "active" : ""}`}
-              onClick={() => switchTab("verifications")}
-            >
-              <span className="nav-icon">🛡️</span>
-              Verifications
-              {pendingVerificationsCount > 0 && (
-                <span className="nav-badge alert">{pendingVerificationsCount}</span>
-              )}
-            </button>
-
-            <button
-              className={`nav-item ${activeTab === "bookings" ? "active" : ""}`}
-              onClick={() => switchTab("bookings")}
-            >
-              <span className="nav-icon">📋</span>
-              Bookings
-              <span className="nav-badge">{totalBookingsCount}</span>
-            </button>
-
-            <button
-              className={`nav-item ${activeTab === "payments" ? "active" : ""}`}
-              onClick={() => switchTab("payments")}
-            >
-              <span className="nav-icon">💳</span>
-              Payments
-            </button>
-
-            <button
-              className={`nav-item ${activeTab === "gullak" ? "active" : ""}`}
-              onClick={() => switchTab("gullak")}
-            >
-              <span className="nav-icon">🪙</span>
-              Gullak Pool
-            </button>
-
-            <button
-              className={`nav-item ${activeTab === "services" ? "active" : ""}`}
-              onClick={() => switchTab("services")}
-            >
-              <span className="nav-icon">🛠️</span>
-              Services
-              <span className="nav-badge">{services.length}</span>
-            </button>
-
-            <button
-              className={`nav-item ${activeTab === "reviews" ? "active" : ""}`}
-              onClick={() => switchTab("reviews")}
-            >
-              <span className="nav-icon">⭐</span>
-              Reviews
-              <span className="nav-badge">{reviewsList.length}</span>
-            </button>
-          </nav>
-        </aside>
-
-        {/* Content Area */}
-        <main className="admin-content-area">
+        {/* Tab Body */}
+        <div className="admin-tab-body">
           {actionSuccess && (
-            <div className="admin-toast-success">
-              {actionSuccess}
-            </div>
+            <div className="admin-toast-success">{actionSuccess}</div>
           )}
 
-          {error && (
-            <div className="admin-toast-error">
-              {error}
-            </div>
-          )}
+          {error && <div className="admin-toast-error">{error}</div>}
 
           {loading ? (
             <div className="admin-loading-state">
-              <p>Fetching live cooperative data...</p>
+              <div className="loading-spinner"></div>
+              <p>Loading live cooperative data...</p>
             </div>
           ) : (
             <>
               {/* TAB 1: OVERVIEW */}
               {activeTab === "overview" && (
                 <div className="admin-tab-content">
-                  <div className="tab-header">
-                    <div>
-                      <h2>Platform Overview</h2>
-                      <p>Real-time metrics, worker verifications, and transparent fee division.</p>
-                    </div>
-                  </div>
-
                   {/* Top Key Metrics Grid */}
-                  <div className="admin-metrics-grid">
-                    <div className="metric-card">
-                      <div className="metric-header">
-                        <span className="metric-title">TOTAL WORKERS</span>
-                        <span className="metric-icon">👨‍🔧</span>
+                  <div className="admin-stats-grid">
+                    <div className="admin-stat-card">
+                      <div className="stat-header">
+                        <span className="stat-title">TOTAL WORKERS</span>
+                        <span className="stat-icon">👨‍🔧</span>
                       </div>
-                      <div className="metric-value">{totalWorkersCount}</div>
-                      <span className="metric-sub">{activeWorkersCount} Active in Jabalpur</span>
+                      <div className="stat-value">{totalWorkersCount}</div>
+                      <span className="stat-sub">{activeWorkersCount} Active in Jabalpur</span>
                     </div>
 
-                    <div className="metric-card">
-                      <div className="metric-header">
-                        <span className="metric-title">VERIFIED WORKERS</span>
-                        <span className="metric-icon">✓</span>
+                    <div className="admin-stat-card">
+                      <div className="stat-header">
+                        <span className="stat-title">VERIFIED WORKERS</span>
+                        <span className="stat-icon">✓</span>
                       </div>
-                      <div className="metric-value green">{verifiedWorkersCount}</div>
-                      <span className="metric-sub">e-Shram Authenticated</span>
+                      <div className="stat-value green">{verifiedWorkersCount}</div>
+                      <span className="stat-sub">e-Shram Authenticated</span>
                     </div>
 
-                    <div className="metric-card">
-                      <div className="metric-header">
-                        <span className="metric-title">PENDING VERIFICATIONS</span>
-                        <span className="metric-icon">⏳</span>
+                    <div className="admin-stat-card">
+                      <div className="stat-header">
+                        <span className="stat-title">PENDING QUEUE</span>
+                        <span className="stat-icon">⏳</span>
                       </div>
-                      <div className="metric-value orange">{pendingVerificationsCount}</div>
-                      <span className="metric-sub">Action required in queue</span>
+                      <div className="stat-value orange">{pendingVerificationsCount}</div>
+                      <span className="stat-sub">Action required in queue</span>
                     </div>
 
-                    <div className="metric-card">
-                      <div className="metric-header">
-                        <span className="metric-title">COMPLETED JOBS</span>
-                        <span className="metric-icon">📋</span>
+                    <div className="admin-stat-card">
+                      <div className="stat-header">
+                        <span className="stat-title">COMPLETED JOBS</span>
+                        <span className="stat-icon">📋</span>
                       </div>
-                      <div className="metric-value">{completedBookingsCount}</div>
-                      <span className="metric-sub">Out of {totalBookingsCount} total orders</span>
+                      <div className="stat-value">{completedBookingsCount}</div>
+                      <span className="stat-sub">Out of {totalBookingsCount} total orders</span>
                     </div>
 
-                    <div className="metric-card highlight">
-                      <div className="metric-header">
-                        <span className="metric-title">CUSTOMER PAYMENTS</span>
-                        <span className="metric-icon">₹</span>
+                    <div className="admin-stat-card highlight">
+                      <div className="stat-header">
+                        <span className="stat-title">CUSTOMER PAYMENTS</span>
+                        <span className="stat-icon">₹</span>
                       </div>
-                      <div className="metric-value">₹{totalCustomerPayments}</div>
-                      <span className="metric-sub">@ ₹239 per completed job</span>
+                      <div className="stat-value">₹{totalCustomerPayments}</div>
+                      <span className="stat-sub">@ ₹239 per completed job</span>
                     </div>
 
-                    <div className="metric-card">
-                      <div className="metric-header">
-                        <span className="metric-title">WORKER LABOUR PAYOUTS</span>
-                        <span className="metric-icon">🤝</span>
+                    <div className="admin-stat-card">
+                      <div className="stat-header">
+                        <span className="stat-title">WORKER DISBURSEMENTS</span>
+                        <span className="stat-icon">🤝</span>
                       </div>
-                      <div className="metric-value green">₹{totalWorkerEarnings}</div>
-                      <span className="metric-sub">100% of ₹199 floor disbursed</span>
+                      <div className="stat-value green">₹{totalWorkerEarnings}</div>
+                      <span className="stat-sub">100% of ₹199 floor disbursed</span>
                     </div>
 
-                    <div className="metric-card">
-                      <div className="metric-header">
-                        <span className="metric-title">PLATFORM OPERATIONS</span>
-                        <span className="metric-icon">⚡</span>
+                    <div className="admin-stat-card">
+                      <div className="stat-header">
+                        <span className="stat-title">PLATFORM OPERATIONS</span>
+                        <span className="stat-icon">⚡</span>
                       </div>
-                      <div className="metric-value">₹{totalPlatformFees}</div>
-                      <span className="metric-sub">@ ₹30 operations fee/order</span>
+                      <div className="stat-value">₹{totalPlatformFees}</div>
+                      <span className="stat-sub">@ ₹30 operations fee/order</span>
                     </div>
 
-                    <div className="metric-card highlight-gullak">
-                      <div className="metric-header">
-                        <span className="metric-title">GULLAK WELFARE POOL</span>
-                        <span className="metric-icon">🪙</span>
+                    <div className="admin-stat-card highlight-gullak">
+                      <div className="stat-header">
+                        <span className="stat-title">GULLAK WELFARE POOL</span>
+                        <span className="stat-icon">🪙</span>
                       </div>
-                      <div className="metric-value gold">₹{totalGullakPool}</div>
-                      <span className="metric-sub">@ ₹10 pooled welfare/order</span>
+                      <div className="stat-value gold">₹{totalGullakPool}</div>
+                      <span className="stat-sub">@ ₹10 pooled welfare/order</span>
                     </div>
                   </div>
 
                   {/* Two Column Section */}
-                  <div className="overview-two-col">
+                  <div className="overview-two-col" style={{ marginTop: "24px" }}>
                     <div className="overview-card">
                       <div className="overview-card-header">
                         <h3>Pending e-Shram Queue</h3>
-                        <button className="text-btn" onClick={() => switchTab("verifications")}>
+                        <button
+                          className="text-btn"
+                          onClick={() => switchTab("verifications")}
+                        >
                           View All →
                         </button>
                       </div>
 
                       <div className="queue-list">
                         {workers
-                          .filter((w) => !w.is_verified && w.verification_status !== "REJECTED")
+                          .filter(
+                            (w) =>
+                              !w.is_verified &&
+                              w.verification_status !== "REJECTED"
+                          )
                           .slice(0, 4)
                           .map((w) => (
                             <div key={w.worker_id} className="queue-item">
                               <div className="queue-worker-info">
                                 <strong>{w.name}</strong>
                                 <small>
-                                  {w.skills?.[0]?.skill_name || "Cooperative Worker"} · UAN: {w.eshram_uan}
+                                  {w.skills?.[0]?.skill_name ||
+                                    "Cooperative Worker"}{" "}
+                                  · UAN: {w.eshram_uan}
                                 </small>
                               </div>
                               <div className="queue-actions">
@@ -648,13 +776,25 @@ function AdminDashboard() {
                               </div>
                             </div>
                           ))}
+                        {workers.filter(
+                          (w) =>
+                            !w.is_verified &&
+                            w.verification_status !== "REJECTED"
+                        ).length === 0 && (
+                          <div className="empty-state-card">
+                            <p>✓ All registered workers are verified.</p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
                     <div className="overview-card">
                       <div className="overview-card-header">
                         <h3>Recent Service Orders</h3>
-                        <button className="text-btn" onClick={() => switchTab("bookings")}>
+                        <button
+                          className="text-btn"
+                          onClick={() => switchTab("bookings")}
+                        >
                           View All →
                         </button>
                       </div>
@@ -665,11 +805,14 @@ function AdminDashboard() {
                             <div>
                               <strong>Order #{b.booking_id}</strong>
                               <small>
-                                {b.service_name || `Service #${b.service_id}`} · Amount: ₹{b.amount || 239}
+                                {b.service_name || `Service #${b.service_id}`} ·
+                                Amount: ₹{b.amount || 239}
                               </small>
                             </div>
-                            <span className={`status-pill ${b.status.toLowerCase()}`}>
-                              ● {b.status}
+                            <span
+                              className={`status-pill ${b.status.toLowerCase()}`}
+                            >
+                              ● {b.status === "ACCEPTED" ? "WORKER ARRIVED" : b.status}
                             </span>
                           </div>
                         ))}
@@ -682,13 +825,6 @@ function AdminDashboard() {
               {/* TAB 2: WORKERS */}
               {activeTab === "workers" && (
                 <div className="admin-tab-content">
-                  <div className="tab-header">
-                    <div>
-                      <h2>Worker Management</h2>
-                      <p>View, verify credentials, and manage dispatch availability for all registered professionals.</p>
-                    </div>
-                  </div>
-
                   <div className="admin-filter-bar">
                     <input
                       type="text"
@@ -723,7 +859,7 @@ function AdminDashboard() {
                     </select>
                   </div>
 
-                  <div className="table-responsive">
+                  <div className="admin-table-container">
                     <table className="admin-table">
                       <thead>
                         <tr>
@@ -743,12 +879,21 @@ function AdminDashboard() {
                               <strong>{w.name}</strong>
                               <small>Member #SH-{100 + w.worker_id}</small>
                             </td>
-                            <td>{w.skills?.[0]?.skill_name || "Cooperative Pro"}</td>
+                            <td>
+                              {w.skills?.[0]?.skill_name || "Cooperative Pro"}
+                            </td>
                             <td>{w.experience_years ?? 5} yrs</td>
-                            <td>⭐ {w.average_rating ? Number(w.average_rating).toFixed(1) : "5.0"}</td>
+                            <td>
+                              ⭐{" "}
+                              {w.average_rating
+                                ? Number(w.average_rating).toFixed(1)
+                                : "5.0"}
+                            </td>
                             <td>
                               <span
-                                className={`availability-dot ${w.is_active ? "online" : "offline"}`}
+                                className={`availability-dot ${
+                                  w.is_active ? "online" : "offline"
+                                }`}
                               >
                                 {w.is_active ? "🟢 Online" : "🔴 Offline"}
                               </span>
@@ -812,13 +957,6 @@ function AdminDashboard() {
               {/* TAB 3: VERIFICATIONS */}
               {activeTab === "verifications" && (
                 <div className="admin-tab-content">
-                  <div className="tab-header">
-                    <div>
-                      <h2>e-Shram Verification Desk</h2>
-                      <p>Review unorganised worker credentials, UAN numbers, and trade certifications.</p>
-                    </div>
-                  </div>
-
                   <div className="verification-cards-grid">
                     {workers.map((w) => (
                       <div key={w.worker_id} className="ver-card">
@@ -853,7 +991,7 @@ function AdminDashboard() {
                           </div>
                           <div className="ver-info-row">
                             <span>Aadhaar Link:</span>
-                            <strong>Linked (Verified format)</strong>
+                            <strong>Linked (Format Validated)</strong>
                           </div>
                           <div className="ver-info-row">
                             <span>Experience:</span>
@@ -876,7 +1014,10 @@ function AdminDashboard() {
                           <button
                             className="secondary-btn mini reject"
                             onClick={() => handleRejectWorker(w)}
-                            disabled={!w.is_verified && w.verification_status === "REJECTED"}
+                            disabled={
+                              !w.is_verified &&
+                              w.verification_status === "REJECTED"
+                            }
                           >
                             ✕ Reject
                           </button>
@@ -896,13 +1037,6 @@ function AdminDashboard() {
               {/* TAB 4: BOOKINGS */}
               {activeTab === "bookings" && (
                 <div className="admin-tab-content">
-                  <div className="tab-header">
-                    <div>
-                      <h2>Service Orders & Bookings</h2>
-                      <p>Live tracking of customer requests, worker dispatch, and lifecycle statuses.</p>
-                    </div>
-                  </div>
-
                   <div className="admin-filter-bar">
                     <input
                       type="text"
@@ -926,7 +1060,7 @@ function AdminDashboard() {
                     </select>
                   </div>
 
-                  <div className="table-responsive">
+                  <div className="admin-table-container">
                     <table className="admin-table">
                       <thead>
                         <tr>
@@ -943,19 +1077,39 @@ function AdminDashboard() {
                       <tbody>
                         {filteredBookings.map((b) => (
                           <tr key={b.booking_id}>
-                            <td><strong>#{b.booking_id}</strong></td>
-                            <td>{b.service_name || `Service #${b.service_id}`}</td>
-                            <td>{b.worker_name || `Worker #${b.worker_id}`}</td>
-                            <td>{b.customer_name || `Customer #${b.customer_id}`}</td>
-                            <td>{b.booking_date || "Today"}</td>
-                            <td><strong style={{ color: "#059669" }}>₹{b.amount || 239}</strong></td>
                             <td>
-                              <span className={`payment-pill ${b.payment_status === "PAID" ? "paid" : "pending"}`}>
+                              <strong>#{b.booking_id}</strong>
+                            </td>
+                            <td>
+                              {b.service_name || `Service #${b.service_id}`}
+                            </td>
+                            <td>
+                              {b.worker_name || `Worker #${b.worker_id}`}
+                            </td>
+                            <td>
+                              {b.customer_name || `Customer #${b.customer_id}`}
+                            </td>
+                            <td>{b.booking_date || "Today"}</td>
+                            <td>
+                              <strong style={{ color: "#059669" }}>
+                                ₹{b.amount || 239}
+                              </strong>
+                            </td>
+                            <td>
+                              <span
+                                className={`payment-pill ${
+                                  b.payment_status === "PAID"
+                                    ? "paid"
+                                    : "pending"
+                                }`}
+                              >
                                 {b.payment_status || "PENDING"}
                               </span>
                             </td>
                             <td>
-                              <span className={`status-pill ${b.status.toLowerCase()}`}>
+                              <span
+                                className={`status-pill ${b.status.toLowerCase()}`}
+                              >
                                 ● {b.status === "ACCEPTED" ? "WORKER ARRIVED" : b.status}
                               </span>
                             </td>
@@ -970,53 +1124,49 @@ function AdminDashboard() {
               {/* TAB 5: PAYMENTS */}
               {activeTab === "payments" && (
                 <div className="admin-tab-content">
-                  <div className="tab-header">
-                    <div>
-                      <h2>Transparent Payment Breakdown</h2>
-                      <p>Clear audit trail showing 100% worker floor disbursement, operations fee, and Gullak allocations.</p>
+                  <div className="admin-stats-grid" style={{ marginBottom: "24px" }}>
+                    <div className="admin-stat-card">
+                      <div className="stat-header">
+                        <span className="stat-title">TOTAL COLLECTED</span>
+                        <span className="stat-icon">₹</span>
+                      </div>
+                      <div className="stat-value">₹{totalCustomerPayments}</div>
+                      <span className="stat-sub">
+                        From {completedBookingsCount} completed jobs
+                      </span>
+                    </div>
+
+                    <div className="admin-stat-card">
+                      <div className="stat-header">
+                        <span className="stat-title">WORKER DISBURSEMENTS</span>
+                        <span className="stat-icon">🤝</span>
+                      </div>
+                      <div className="stat-value green">
+                        ₹{totalWorkerEarnings}
+                      </div>
+                      <span className="stat-sub">100% of ₹199 per job</span>
+                    </div>
+
+                    <div className="admin-stat-card">
+                      <div className="stat-header">
+                        <span className="stat-title">PLATFORM OPERATIONS</span>
+                        <span className="stat-icon">⚡</span>
+                      </div>
+                      <div className="stat-value">₹{totalPlatformFees}</div>
+                      <span className="stat-sub">₹30 per job</span>
+                    </div>
+
+                    <div className="admin-stat-card highlight-gullak">
+                      <div className="stat-header">
+                        <span className="stat-title">GULLAK WELFARE POOL</span>
+                        <span className="stat-icon">🪙</span>
+                      </div>
+                      <div className="stat-value gold">₹{totalGullakPool}</div>
+                      <span className="stat-sub">₹10 per job pooled</span>
                     </div>
                   </div>
 
-                  {/* Summary Metric Strip */}
-                  <div className="admin-metrics-grid" style={{ marginBottom: "25px" }}>
-                    <div className="metric-card">
-                      <div className="metric-header">
-                        <span className="metric-title">TOTAL COLLECTED</span>
-                        <span className="metric-icon">₹</span>
-                      </div>
-                      <div className="metric-value">₹{totalCustomerPayments}</div>
-                      <span className="metric-sub">From {completedBookingsCount} completed jobs</span>
-                    </div>
-
-                    <div className="metric-card">
-                      <div className="metric-header">
-                        <span className="metric-title">WORKER DISBURSEMENTS</span>
-                        <span className="metric-icon">🤝</span>
-                      </div>
-                      <div className="metric-value green">₹{totalWorkerEarnings}</div>
-                      <span className="metric-sub">100% of ₹199 per job</span>
-                    </div>
-
-                    <div className="metric-card">
-                      <div className="metric-header">
-                        <span className="metric-title">PLATFORM OPERATIONS</span>
-                        <span className="metric-icon">⚡</span>
-                      </div>
-                      <div className="metric-value">₹{totalPlatformFees}</div>
-                      <span className="metric-sub">₹30 per job</span>
-                    </div>
-
-                    <div className="metric-card highlight-gullak">
-                      <div className="metric-header">
-                        <span className="metric-title">GULLAK WELFARE POOL</span>
-                        <span className="metric-icon">🪙</span>
-                      </div>
-                      <div className="metric-value gold">₹{totalGullakPool}</div>
-                      <span className="metric-sub">₹10 per job pooled</span>
-                    </div>
-                  </div>
-
-                  <div className="table-responsive">
+                  <div className="admin-table-container">
                     <table className="admin-table">
                       <thead>
                         <tr>
@@ -1031,13 +1181,31 @@ function AdminDashboard() {
                       <tbody>
                         {bookings.map((b) => (
                           <tr key={b.booking_id}>
-                            <td><strong>#{b.booking_id}</strong></td>
-                            <td><strong>₹239.00</strong></td>
-                            <td><strong style={{ color: "#059669" }}>₹199.00</strong></td>
-                            <td>₹30.00</td>
-                            <td><strong style={{ color: "#d97706" }}>₹10.00</strong></td>
                             <td>
-                              <span className={`payment-pill ${b.payment_status === "PAID" ? "paid" : "pending"}`}>
+                              <strong>#{b.booking_id}</strong>
+                            </td>
+                            <td>
+                              <strong>₹239.00</strong>
+                            </td>
+                            <td>
+                              <strong style={{ color: "#059669" }}>
+                                ₹199.00
+                              </strong>
+                            </td>
+                            <td>₹30.00</td>
+                            <td>
+                              <strong style={{ color: "#d97706" }}>
+                                ₹10.00
+                              </strong>
+                            </td>
+                            <td>
+                              <span
+                                className={`payment-pill ${
+                                  b.payment_status === "PAID"
+                                    ? "paid"
+                                    : "pending"
+                                }`}
+                              >
                                 {b.payment_status || "PENDING"}
                               </span>
                             </td>
@@ -1052,93 +1220,147 @@ function AdminDashboard() {
               {/* TAB 6: GULLAK COOPERATIVE WELFARE POOL */}
               {activeTab === "gullak" && (
                 <div className="admin-tab-content">
-                  <div className="tab-header">
-                    <div>
-                      <h2>🪙 Cooperative Welfare Pool (Gullak)</h2>
-                      <p>Community mutual aid fund providing healthcare, tool insurance, and emergency safety nets.</p>
+                  {gullakLoading ? (
+                    <div className="admin-loading-state">
+                      <div className="loading-spinner"></div>
+                      <p>Loading cooperative data...</p>
                     </div>
-                  </div>
+                  ) : gullakError ? (
+                    <div className="admin-error-card">
+                      <h3>Unable to load cooperative data</h3>
+                      <p>{gullakError}</p>
+                      <button className="primary-btn mini" onClick={loadGullakData}>
+                        🔄 Retry Loading Gullak Data
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="gullak-banner-card">
+                        <div className="gullak-banner-icon">🪙</div>
+                        <div>
+                          <h3>
+                            Total Welfare Reserve: ₹{totalGullakPool + 2500}.00
+                          </h3>
+                          <p>
+                            Accumulated through ₹10 contributions on every
+                            completed service booking. Managed cooperatively for
+                            unorganised member welfare and emergencies.
+                          </p>
+                        </div>
+                        <span className="gullak-active-pill">
+                          🟢 POOL ACTIVE & SOLVENT
+                        </span>
+                      </div>
 
-                  <div className="gullak-banner-card">
-                    <div className="gullak-banner-icon">🪙</div>
-                    <div>
-                      <h3>Total Welfare Reserve: ₹{totalGullakPool + 2500}.00</h3>
-                      <p>
-                        Accumulated through ₹10 contributions on every completed service booking. Managed cooperatively for unorganised member welfare.
-                      </p>
-                    </div>
-                    <span className="gullak-active-pill">🟢 POOL ACTIVE & SOLVENT</span>
-                  </div>
+                      <div className="gullak-allocations-grid">
+                        <div className="gullak-alloc-card">
+                          <span className="alloc-icon">🏥</span>
+                          <h4>Emergency Healthcare Grant</h4>
+                          <p>
+                            Covers up to ₹15,000 for unexpected medical
+                            emergencies for active members.
+                          </p>
+                          <strong>
+                            Allocated: ₹{(totalGullakPool * 0.4).toFixed(0)}
+                          </strong>
+                        </div>
 
-                  <div className="gullak-allocations-grid">
-                    <div className="gullak-alloc-card">
-                      <span className="alloc-icon">🏥</span>
-                      <h4>Emergency Healthcare Grant</h4>
-                      <p>Covers up to ₹15,000 for unexpected medical emergencies for active members.</p>
-                      <strong>Allocated: ₹{(totalGullakPool * 0.4).toFixed(0)}</strong>
-                    </div>
+                        <div className="gullak-alloc-card">
+                          <span className="alloc-icon">🛠️</span>
+                          <h4>Tool & Equipment Insurance</h4>
+                          <p>
+                            Micro-grants for essential trade tool repairs and
+                            replacements.
+                          </p>
+                          <strong>
+                            Allocated: ₹{(totalGullakPool * 0.3).toFixed(0)}
+                          </strong>
+                        </div>
 
-                    <div className="gullak-alloc-card">
-                      <span className="alloc-icon">🛠️</span>
-                      <h4>Tool & Equipment Insurance</h4>
-                      <p>Micro-grants for essential trade tool repairs and replacements.</p>
-                      <strong>Allocated: ₹{(totalGullakPool * 0.3).toFixed(0)}</strong>
-                    </div>
+                        <div className="gullak-alloc-card">
+                          <span className="alloc-icon">🛡️</span>
+                          <h4>Accidental & Disability Cover</h4>
+                          <p>
+                            Protection cushion during on-site injuries or
+                            recovery periods.
+                          </p>
+                          <strong>
+                            Allocated: ₹{(totalGullakPool * 0.3).toFixed(0)}
+                          </strong>
+                        </div>
+                      </div>
 
-                    <div className="gullak-alloc-card">
-                      <span className="alloc-icon">🛡️</span>
-                      <h4>Accidental & Disability Cover</h4>
-                      <p>Protection cushion during on-site injuries or recovery periods.</p>
-                      <strong>Allocated: ₹{(totalGullakPool * 0.3).toFixed(0)}</strong>
-                    </div>
-                  </div>
+                      <div className="overview-card" style={{ marginTop: "24px" }}>
+                        <div className="overview-card-header">
+                          <h3>Recent Welfare Ledger Entries</h3>
+                        </div>
 
-                  <div className="overview-card" style={{ marginTop: "25px" }}>
-                    <div className="overview-card-header">
-                      <h3>Recent Welfare Ledger Entries</h3>
-                    </div>
-
-                    <div className="table-responsive">
-                      <table className="admin-table">
-                        <thead>
-                          <tr>
-                            <th>Entry ID</th>
-                            <th>Description</th>
-                            <th>Type</th>
-                            <th>Contribution</th>
-                            <th>Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {bookings.slice(0, 5).map((b, idx) => (
-                            <tr key={idx}>
-                              <td><code>GLK-2026-{1000 + b.booking_id}</code></td>
-                              <td>Welfare levy from completed service Order #{b.booking_id}</td>
-                              <td>Order Inflow</td>
-                              <td><strong style={{ color: "#059669" }}>+ ₹10.00</strong></td>
-                              <td><span className="status-pill completed">SETTLED</span></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                        {bookings.length > 0 ? (
+                          <div className="admin-table-container">
+                            <table className="admin-table">
+                              <thead>
+                                <tr>
+                                  <th>Entry ID</th>
+                                  <th>Description</th>
+                                  <th>Type</th>
+                                  <th>Contribution</th>
+                                  <th>Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {bookings.slice(0, 6).map((b, idx) => (
+                                  <tr key={idx}>
+                                    <td>
+                                      <code>
+                                        GLK-2026-{1000 + b.booking_id}
+                                      </code>
+                                    </td>
+                                    <td>
+                                      Welfare levy from completed service Order #
+                                      {b.booking_id}
+                                    </td>
+                                    <td>Order Inflow</td>
+                                    <td>
+                                      <strong style={{ color: "#059669" }}>
+                                        + ₹10.00
+                                      </strong>
+                                    </td>
+                                    <td>
+                                      <span className="status-pill completed">
+                                        SETTLED
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="empty-state-card">
+                            <p>No cooperative transactions yet.</p>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
               {/* TAB 7: SERVICES */}
               {activeTab === "services" && (
                 <div className="admin-tab-content">
-                  <div className="tab-header">
-                    <div>
-                      <h2>Service Catalog</h2>
-                      <p>Standardized service offerings and standard floor pricing across Jabalpur.</p>
-                    </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      marginBottom: "18px",
+                    }}
+                  >
                     <button
                       className="primary-btn"
                       onClick={() => setShowAddServiceModal(true)}
                     >
-                      + Add New Service
+                      + Add New Service Offering
                     </button>
                   </div>
 
@@ -1147,7 +1369,9 @@ function AdminDashboard() {
                       <div key={s.service_id} className="service-admin-card">
                         <div className="service-admin-header">
                           <h4>{s.service || s.service_name}</h4>
-                          <span className="service-price-pill">₹239 Total Floor</span>
+                          <span className="service-price-pill">
+                            ₹239 Total Floor
+                          </span>
                         </div>
                         <p className="service-desc">{s.description}</p>
                         <div className="service-meta-row">
@@ -1163,32 +1387,32 @@ function AdminDashboard() {
               {/* TAB 8: REVIEWS */}
               {activeTab === "reviews" && (
                 <div className="admin-tab-content">
-                  <div className="tab-header">
-                    <div>
-                      <h2>Customer Ratings & Reviews</h2>
-                      <p>Community feedback aggregated across completed trade services.</p>
-                    </div>
-                  </div>
-
                   <div className="reviews-admin-grid">
                     {reviewsList.length > 0 ? (
                       reviewsList.map((rev, rIdx) => (
-                        <div key={rIdx} className="review-admin-card">
+                        <div key={rIdx} className="admin-review-card">
                           <div className="review-card-top">
                             <div>
-                              <strong>{rev.worker_name || `Worker #${rev.worker_id}`}</strong>
+                              <strong>
+                                {rev.worker_name ||
+                                  `Worker #${rev.worker_id}`}
+                              </strong>
                               <small>Order #{rev.booking_id || "101"}</small>
                             </div>
                             <div className="review-stars">
                               {"⭐".repeat(rev.rating || 5)}
-                              <span className="rating-val">({rev.rating || 5}/5)</span>
+                              <span className="rating-val">
+                                ({rev.rating || 5}/5)
+                              </span>
                             </div>
                           </div>
-                          <p className="review-text">"{rev.review || rev.comment || "Great job!"}"</p>
+                          <p className="review-text">
+                            "{rev.review || rev.comment || "Great job!"}"
+                          </p>
                         </div>
                       ))
                     ) : (
-                      <div className="empty-reviews-box">
+                      <div className="empty-state-card">
                         <p>No customer reviews logged in database yet.</p>
                       </div>
                     )}
@@ -1197,16 +1421,27 @@ function AdminDashboard() {
               )}
             </>
           )}
-        </main>
+        </div>
       </div>
 
       {/* WORKER DETAIL MODAL */}
       {selectedWorker && (
-        <div className="admin-modal-overlay" onClick={() => setSelectedWorker(null)}>
-          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="admin-modal-overlay"
+          onClick={() => setSelectedWorker(null)}
+        >
+          <div
+            className="admin-modal-box"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3>Worker Profile Inspector</h3>
-              <button className="modal-close-btn" onClick={() => setSelectedWorker(null)}>✕</button>
+              <button
+                className="modal-close-btn"
+                onClick={() => setSelectedWorker(null)}
+              >
+                ✕
+              </button>
             </div>
 
             <div className="modal-body">
@@ -1214,14 +1449,19 @@ function AdminDashboard() {
                 <div className="inspector-avatar">👨‍🔧</div>
                 <div>
                   <h3>{selectedWorker.name}</h3>
-                  <p>Cooperative Member #SH-{100 + selectedWorker.worker_id} · {selectedWorker.address || "Jabalpur"}</p>
+                  <p>
+                    Cooperative Member #SH-{100 + selectedWorker.worker_id} ·{" "}
+                    {selectedWorker.address || "Jabalpur"}
+                  </p>
                 </div>
               </div>
 
               <div className="inspector-details-grid">
                 <div>
                   <small>Primary Trade</small>
-                  <strong>{selectedWorker.skills?.[0]?.skill_name || "General Pro"}</strong>
+                  <strong>
+                    {selectedWorker.skills?.[0]?.skill_name || "General Pro"}
+                  </strong>
                 </div>
 
                 <div>
@@ -1236,7 +1476,12 @@ function AdminDashboard() {
 
                 <div>
                   <small>Rating</small>
-                  <strong>⭐ {selectedWorker.average_rating ? Number(selectedWorker.average_rating).toFixed(1) : "5.0"}</strong>
+                  <strong>
+                    ⭐{" "}
+                    {selectedWorker.average_rating
+                      ? Number(selectedWorker.average_rating).toFixed(1)
+                      : "5.0"}
+                  </strong>
                 </div>
 
                 <div>
@@ -1246,8 +1491,14 @@ function AdminDashboard() {
 
                 <div>
                   <small>Verification</small>
-                  <strong style={{ color: selectedWorker.is_verified ? "#059669" : "#d97706" }}>
-                    {selectedWorker.is_verified ? "✓ Verified" : "⏳ Pending / Unverified"}
+                  <strong
+                    style={{
+                      color: selectedWorker.is_verified ? "#059669" : "#d97706",
+                    }}
+                  >
+                    {selectedWorker.is_verified
+                      ? "✓ Verified"
+                      : "⏳ Pending / Unverified"}
                   </strong>
                 </div>
               </div>
@@ -1288,11 +1539,22 @@ function AdminDashboard() {
 
       {/* CREATE SERVICE MODAL */}
       {showAddServiceModal && (
-        <div className="admin-modal-overlay" onClick={() => setShowAddServiceModal(false)}>
-          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="admin-modal-overlay"
+          onClick={() => setShowAddServiceModal(false)}
+        >
+          <div
+            className="admin-modal-box"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
               <h3>Add New Service Offering</h3>
-              <button className="modal-close-btn" onClick={() => setShowAddServiceModal(false)}>✕</button>
+              <button
+                className="modal-close-btn"
+                onClick={() => setShowAddServiceModal(false)}
+              >
+                ✕
+              </button>
             </div>
 
             <form onSubmit={handleCreateService}>
@@ -1355,7 +1617,9 @@ function AdminDashboard() {
                   className="primary-btn"
                   disabled={creatingService}
                 >
-                  {creatingService ? "Creating Service..." : "Create Service Offering"}
+                  {creatingService
+                    ? "Creating Service..."
+                    : "Create Service Offering"}
                 </button>
                 <button
                   type="button"

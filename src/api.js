@@ -266,6 +266,21 @@ export const setStoredVerification = (workerId, data) => {
   }
 };
 
+// Admin and Gullak APIs
+export const getAdminStats = () => request("/admin/stats");
+export const getAdminPayments = () => request("/admin/payments");
+export const getGullakSummary = async () => {
+  try {
+    return await request("/admin/gullak-summary");
+  } catch {
+    try {
+      return await request("/admin/payments");
+    } catch {
+      return null;
+    }
+  }
+};
+
 export const getAllStoredVerifications = () => {
   try {
     const result = {};

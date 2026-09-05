@@ -2717,6 +2717,7 @@ footer > p {
 .admin-layout {
   display: flex;
   min-height: 100vh;
+  width: 100%;
   background: #f8fafc;
   font-family: inherit;
   color: #0f172a;
@@ -2724,12 +2725,18 @@ footer > p {
 
 .admin-sidebar {
   width: 270px;
+  min-width: 270px;
+  height: 100vh;
+  position: sticky;
+  top: 0;
   background: #0f172a;
   color: #f8fafc;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   border-right: 1px solid #1e293b;
+  overflow-y: auto;
+  z-index: 50;
 }
 
 .admin-sidebar-header {
@@ -2747,16 +2754,17 @@ footer > p {
   font-size: 11px;
   color: #38bdf8;
   background: rgba(56, 189, 248, 0.1);
-  padding: 2px 8px;
+  padding: 3px 8px;
   border-radius: 6px;
   margin-top: 8px;
+  font-weight: 600;
 }
 
 .admin-nav-menu {
   padding: 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   flex: 1;
 }
 
@@ -2783,35 +2791,53 @@ footer > p {
 }
 
 .admin-nav-item.active {
-  background: #10b981;
+  background: #059669;
   color: white;
 }
 
-.nav-icon {
+.admin-nav-item .nav-icon {
   font-size: 18px;
+  flex-shrink: 0;
+}
+
+.admin-nav-item .nav-label {
+  flex: 1;
+  text-align: left;
 }
 
 .nav-count-badge {
   margin-left: auto;
-  background: #334155;
-  color: #e2e8f0;
+  background: #1e293b;
+  color: #cbd5e1;
   font-size: 11px;
-  padding: 2px 7px;
+  font-weight: 700;
+  padding: 2px 8px;
   border-radius: 999px;
+  border: 1px solid #334155;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
 }
 
 .admin-nav-item.active .nav-count-badge {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.25);
+  color: white;
+  border-color: transparent;
 }
 
 .nav-alert-badge {
   margin-left: auto;
-  background: #f59e0b;
+  background: #d97706;
   color: white;
   font-size: 11px;
   font-weight: 800;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
 }
 
 .admin-sidebar-footer {
@@ -2820,6 +2846,7 @@ footer > p {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-top: auto;
 }
 
 .admin-user-info {
@@ -2829,7 +2856,7 @@ footer > p {
 }
 
 .admin-avatar {
-  font-size: 24px;
+  font-size: 22px;
 }
 
 .admin-user-info strong {
@@ -2847,10 +2874,12 @@ footer > p {
   background: transparent;
   border: 1px solid #334155;
   color: #94a3b8;
-  padding: 6px 10px;
+  padding: 6px 12px;
   border-radius: 8px;
   font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s;
 }
 
 .logout-btn:hover {
@@ -4478,8 +4507,95 @@ footer > p {
   margin-bottom: 2px;
 }
 
+/* Loading, Error and Empty States */
+.admin-loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #059669;
+  font-weight: 600;
+  gap: 16px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #059669;
+  border-radius: 50%;
+  animation: admin-spin 0.8s linear infinite;
+}
+
+@keyframes admin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.admin-error-card {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 14px;
+  padding: 24px;
+  text-align: center;
+  color: #991b1b;
+  margin: 20px 0;
+}
+
+.admin-error-card h3 {
+  margin: 0 0 6px 0;
+  font-size: 16px;
+}
+
+.admin-error-card p {
+  font-size: 13px;
+  margin: 0 0 16px 0;
+}
+
+.empty-state-card {
+  background: #f8fafc;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 /* Responsive Overrides */
 @media (max-width: 900px) {
+  .admin-layout {
+    flex-direction: column;
+  }
+
+  .admin-sidebar {
+    width: 100%;
+    min-width: 100%;
+    height: auto;
+    position: static;
+  }
+
+  .admin-nav-menu {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .admin-nav-item {
+    width: auto;
+    flex: 1 1 calc(50% - 8px);
+  }
+
+  .admin-tab-body {
+    padding: 20px 16px;
+  }
+
   .time-slots-grid,
   .otp-security-container,
   .worker-trust-section,
@@ -4498,5 +4614,6 @@ footer > p {
     align-items: flex-start;
   }
 }
+
 
 
