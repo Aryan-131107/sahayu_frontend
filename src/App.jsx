@@ -9,6 +9,7 @@ import WorkerVerification from "./WorkerVerification";
 import AdminDashboard from "./AdminDashboard";
 import Booking from "./Booking";
 import MyBookings from "./MyBookings";
+import PresentationMode from "./PresentationMode";
 
 import {
   BrowserRouter,
@@ -47,14 +48,32 @@ function Home() {
           <a href="#how-it-works">How It Works</a>
           <a href="#workers">For Workers</a>
           <a href="#about">About Us</a>
+          <button
+            type="button"
+            className="text-link-btn"
+            style={{ color: "#0284c7", fontWeight: 700, cursor: "pointer", background: "none", border: "none", font: "inherit" }}
+            onClick={() => navigate("/live-demo")}
+          >
+            ⚡ Live Demo
+          </button>
         </div>
 
-        <button
-          className="login-btn"
-          onClick={() => navigate("/login")}
-        >
-          Login
-        </button>
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <button
+            className="primary-btn"
+            style={{ background: "#0284c7", borderColor: "#0284c7", padding: "8px 16px", fontSize: "13px" }}
+            onClick={() => navigate("/live-demo")}
+          >
+            ⚡ Live Demo
+          </button>
+
+          <button
+            className="login-btn"
+            onClick={() => navigate("/login")}
+          >
+            Login
+          </button>
+        </div>
       </nav>
 
       {/* HERO */}
@@ -579,6 +598,21 @@ function App() {
         <Route
           path="/my-bookings"
           element={<MyBookings />}
+        />
+
+        <Route
+          path="/live-demo"
+          element={<PresentationMode />}
+        />
+
+        <Route
+          path="/presentation"
+          element={<PresentationMode />}
+        />
+
+        <Route
+          path="/demo"
+          element={<PresentationMode />}
         />
 
       </Routes>

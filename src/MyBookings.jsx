@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { getBooking, cancelBooking as cancelBookingApi, createReview } from "./api";
 import ServiceTimeline from "./ServiceTimeline";
 import ServiceMap from "./ServiceMap";
+import WarrantyCountdown from "./WarrantyCountdown";
 import "./App.css";
 
 function MyBookings() {
@@ -135,17 +136,6 @@ function MyBookings() {
   const startOtp = String(4821);
   const endOtp = String(9134);
 
-  // Calculate 3-day guarantee date
-  const getGuaranteeDate = () => {
-    const base = new Date();
-    base.setDate(base.getDate() + 3);
-    return base.toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
   return (
     <div className="customer-page">
       <nav className="worker-topbar">
@@ -157,6 +147,14 @@ function MyBookings() {
         <div className="topbar-actions">
           <button className="secondary-btn" onClick={() => navigate("/")}>
             Home
+          </button>
+
+          <button
+            className="primary-btn"
+            style={{ background: "#0284c7", borderColor: "#0284c7" }}
+            onClick={() => navigate(`/live-demo?booking_id=${bookingId}`)}
+          >
+            ⚡ Live Demo
           </button>
 
           <button
@@ -253,11 +251,15 @@ function MyBookings() {
 
         {booking && (
           <>
-            {/* 1. 🚗 PROGRESS TIMELINE (BOOKED -> WORKER ARRIVED -> IN PROGRESS -> COMPLETED) */}
+            {/* 1. 🚗 PROGRESS TIMELINE (BOOKED -> ARRIVED -> IN PROGRESS -> COMPLETED -> WARRANTY ACTIVE) */}
             <ServiceTimeline
               status={booking.status}
               bookingDate={booking.booking_date}
               amount={booking.amount || 239}
+              startOtpVerifiedAt={booking.start_otp_verified_at}
+              endOtpVerifiedAt={booking.end_otp_verified_at}
+              warrantyExpiresAt={booking.warranty_expires_at}
+              bookingReference={booking.booking_reference}
             />
 
             {/* 2. 🔐 OTP VERIFICATION CONCEPT (START & END OTP) */}
@@ -266,59 +268,44 @@ function MyBookings() {
                 <div className="otp-card start-otp-card">
                   <div className="otp-header">
                     <span className="otp-badge start">STEP 1 · ARRIVAL</span>
-                    <h4>START OTP</h4>
+                    <h4>START PIN</h4>
                   </div>
-                  <div className="otp-display-box">{startOtp}</div>
+                  <div className="otp-display-box">{booking.start_otp || startOtp}</div>
                   <p className="otp-instruction">
-                    Share this OTP with your worker when they arrive at your location.
+                    Share this PIN with your worker when they arrive at your location.
                   </p>
                   <small className="otp-sub-note">
-                    Worker enters this to start the job.
+                    {booking.status === "in_progress" || booking.status === "IN_PROGRESS" || booking.status === "completed" || booking.status === "COMPLETED"
+                      ? "✓ Start PIN verified via Backend Consensus"
+                      : "Worker enters this to start the job."}
                   </small>
                 </div>
 
                 <div className="otp-card end-otp-card">
                   <div className="otp-header">
                     <span className="otp-badge end">STEP 2 · COMPLETION</span>
-                    <h4>END OTP</h4>
+                    <h4>COMPLETION PIN</h4>
                   </div>
-                  <div className="otp-display-box">{endOtp}</div>
+                  <div className="otp-display-box">{booking.end_otp || endOtp}</div>
                   <p className="otp-instruction">
-                    Share this OTP only after the work is completed and thoroughly checked.
+                    Share this PIN only after the work is completed and thoroughly checked.
                   </p>
                   <small className="otp-sub-note">
-                    Ensures satisfaction before payment disbursement.
+                    {booking.status === "completed" || booking.status === "COMPLETED"
+                      ? "✓ Completion PIN verified & ₹199 labour settled"
+                      : "Ensures satisfaction before payment disbursement."}
                   </small>
                 </div>
               </div>
             )}
 
-            {/* 3. 🛡️ 3-DAY WORKMANSHIP GUARANTEE (ACTIVE UPON COMPLETION) */}
-            {booking.status === "COMPLETED" ? (
-              <div className="warranty-card active-warranty">
-                <div className="warranty-icon-badge">🛡️</div>
-                <div className="warranty-info">
-                  <h3>3-Day Workmanship Guarantee Active</h3>
-                  <p>
-                    Your SAHĀYU workmanship guarantee is active until <strong>{getGuaranteeDate()}</strong>.
-                  </p>
-                  <small>
-                    Cooperative Protection: If any workmanship defect occurs, we provide free re-inspection and resolution.
-                  </small>
-                </div>
-                <span className="guarantee-status-tag">ACTIVE GUARANTEE</span>
-              </div>
-            ) : booking.status === "CANCELLED" ? null : (
-              <div className="warranty-card pending-warranty">
-                <div className="warranty-icon-badge">🛡️</div>
-                <div className="warranty-info">
-                  <h4>3-Day Workmanship Guarantee</h4>
-                  <p>
-                    Will automatically activate upon service completion and End OTP verification.
-                  </p>
-                </div>
-                <span className="guarantee-status-tag pending">ACTIVATES ON COMPLETION</span>
-              </div>
+            {/* 3. 🛡️ 3-DAY WORKMANSHIP GUARANTEE (DYNAMIC COUNTDOWN DRIVEN BY BACKEND) */}
+            {booking.status !== "CANCELLED" && (
+              <WarrantyCountdown
+                warrantyExpiresAt={booking.warranty_expires_at}
+                warrantyStartedAt={booking.warranty_started_at}
+                status={booking.status}
+              />
             )}
 
             {/* 4. 🗺️ Proximity Routing Map */}

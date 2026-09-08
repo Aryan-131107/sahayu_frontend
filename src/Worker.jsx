@@ -7,10 +7,11 @@ import {
   getBooking,
   getCustomerBookings,
   acceptBooking,
-  startBooking,
-  completeBooking,
+  verifyStartOtp,
+  verifyEndOtp,
   getStoredVerification,
 } from "./api";
+import WarrantyCountdown from "./WarrantyCountdown";
 import "./App.css";
 
 function Worker() {
@@ -28,8 +29,13 @@ function Worker() {
   // Active Job Queue State
   const [activeJob, setActiveJob] = useState(null);
   const [jobActionLoading, setJobActionLoading] = useState(false);
+  const [verifyingStart, setVerifyingStart] = useState(false);
+  const [verifyingEnd, setVerifyingEnd] = useState(false);
   const [jobMessage, setJobMessage] = useState("");
   const [jobError, setJobError] = useState("");
+  const [shakeStart, setShakeStart] = useState(false);
+  const [shakeEnd, setShakeEnd] = useState(false);
+  const [consensusSuccess, setConsensusSuccess] = useState(null);
 
   // OTP inputs for starting and ending service
   const [enteredStartOtp, setEnteredStartOtp] = useState("");
@@ -149,6 +155,7 @@ function Worker() {
     setJobActionLoading(true);
     setJobError("");
     setJobMessage("");
+    setConsensusSuccess(null);
 
     try {
       const updated = await acceptBooking(activeJob.booking_id);
@@ -165,24 +172,48 @@ function Worker() {
     if (e) e.preventDefault();
     if (!activeJob) return;
 
-    if (!enteredStartOtp || enteredStartOtp.trim().length !== 4) {
-      setJobError("Please enter the 4-digit Start OTP provided by the customer.");
+    const trimmed = enteredStartOtp.trim();
+    if (!trimmed || !/^\d{4}$/.test(trimmed)) {
+      setJobError("Please enter the 4-digit Start PIN (numbers only).");
+      setShakeStart(true);
+      setTimeout(() => setShakeStart(false), 600);
       return;
     }
 
-    setJobActionLoading(true);
+    setVerifyingStart(true);
     setJobError("");
     setJobMessage("");
+    setConsensusSuccess(null);
 
     try {
-      const updated = await startBooking(activeJob.booking_id);
-      setActiveJob(updated);
-      setJobMessage(`✓ Start OTP verified! Service #${activeJob.booking_id} is now IN PROGRESS.`);
+      const res = await verifyStartOtp({
+        booking_id: activeJob.booking_id,
+        otp: trimmed,
+      });
+
+      // ONLY transition state upon backend confirmation
+      const freshBooking = await getBooking(activeJob.booking_id);
+      setActiveJob(freshBooking);
+
+      setConsensusSuccess({
+        type: "START",
+        txnId: res.transaction_id || `TXN-START-${String(activeJob.booking_id).padStart(6, "0")}`,
+        timestamp: res.verification_timestamp || new Date().toISOString(),
+        message: res.message || "Doorstep arrival verified. Work is now in progress.",
+      });
+
       setEnteredStartOtp("");
     } catch (err) {
-      setJobError(err.message || "Invalid OTP or failed to start service.");
+      const msg = err.message || "Invalid Handshake PIN.";
+      setJobError(
+        msg.includes("Invalid Handshake PIN")
+          ? `✕ ${msg}`
+          : `✕ Invalid Handshake PIN: ${msg}`
+      );
+      setShakeStart(true);
+      setTimeout(() => setShakeStart(false), 600);
     } finally {
-      setJobActionLoading(false);
+      setVerifyingStart(false);
     }
   };
 
@@ -190,26 +221,65 @@ function Worker() {
     if (e) e.preventDefault();
     if (!activeJob) return;
 
-    if (!enteredEndOtp || enteredEndOtp.trim().length !== 4) {
-      setJobError("Please enter the 4-digit End OTP provided by the customer.");
+    const trimmed = enteredEndOtp.trim();
+    if (!trimmed || !/^\d{4}$/.test(trimmed)) {
+      setJobError("Please enter the 4-digit Completion PIN (numbers only).");
+      setShakeEnd(true);
+      setTimeout(() => setShakeEnd(false), 600);
       return;
     }
 
-    setJobActionLoading(true);
+    setVerifyingEnd(true);
     setJobError("");
     setJobMessage("");
+    setConsensusSuccess(null);
 
     try {
-      const updated = await completeBooking(activeJob.booking_id);
-      setActiveJob(updated);
-      setJobMessage(
-        `✓ End OTP verified! Service #${activeJob.booking_id} COMPLETED. Full ₹199 labour payout settled!`
-      );
+      const res = await verifyEndOtp({
+        booking_id: activeJob.booking_id,
+        otp: trimmed,
+      });
+
+      // ONLY transition state upon backend confirmation
+      const freshBooking = await getBooking(activeJob.booking_id);
+      setActiveJob(freshBooking);
+
+      setConsensusSuccess({
+        type: "END",
+        txnId: res.transaction_id || `TXN-SAHAYU-${String(activeJob.booking_id).padStart(6, "0")}`,
+        timestamp: res.completion_timestamp || new Date().toISOString(),
+        message: res.message || "Job completed successfully. Payment settled & 72-hour warranty activated.",
+      });
+
       setEnteredEndOtp("");
     } catch (err) {
-      setJobError(err.message || "Invalid OTP or failed to complete service.");
+      const msg = err.message || "Invalid Completion PIN.";
+      setJobError(
+        msg.includes("Invalid")
+          ? `✕ ${msg}`
+          : `✕ Invalid Completion PIN: ${msg}`
+      );
+      setShakeEnd(true);
+      setTimeout(() => setShakeEnd(false), 600);
     } finally {
-      setJobActionLoading(false);
+      setVerifyingEnd(false);
+    }
+  };
+
+  const formatTime = (isoString) => {
+    if (!isoString) return new Date().toLocaleString("en-IN");
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    } catch {
+      return isoString;
     }
   };
 
@@ -237,6 +307,14 @@ function Worker() {
         <div className="topbar-actions">
           <button className="secondary-btn" onClick={() => navigate("/")}>
             Home
+          </button>
+
+          <button
+            className="primary-btn"
+            style={{ background: "#0284c7", borderColor: "#0284c7" }}
+            onClick={() => navigate("/live-demo")}
+          >
+            ⚡ Live Demo
           </button>
 
           <button
@@ -410,6 +488,17 @@ function Worker() {
             </button>
           </div>
 
+          {consensusSuccess && (
+            <div className="consensus-success-banner" style={{ marginBottom: "20px" }}>
+              <div className="consensus-icon">✓</div>
+              <div className="consensus-body">
+                <strong>Verified via Backend Consensus</strong>
+                <p>Txn #{consensusSuccess.txnId} Committed</p>
+                <small>{formatTime(consensusSuccess.timestamp)}</small>
+              </div>
+            </div>
+          )}
+
           {jobMessage && <div className="admin-toast-success">{jobMessage}</div>}
           {jobError && <div className="admin-toast-error">{jobError}</div>}
 
@@ -417,7 +506,7 @@ function Worker() {
             <div className="active-job-card">
               <div className="job-card-header">
                 <div>
-                  <span className="job-tag">ASSIGNED ORDER #{activeJob.booking_id}</span>
+                  <span className="job-tag">ASSIGNED ORDER #{activeJob.booking_reference || `SH-00${activeJob.booking_id}`}</span>
                   <h3>{activeJob.service_name || primarySkill}</h3>
                   <p className="job-customer-info">
                     Customer: <strong>{activeJob.customer_name || "Community Customer"}</strong> · Location: <strong>{activeJob.address || "Civil Lines, Jabalpur"}</strong>
@@ -445,7 +534,7 @@ function Worker() {
                       onClick={handleAcceptJob}
                       disabled={jobActionLoading}
                     >
-                      {jobActionLoading ? "Accepting..." : "Accept Service Request →"}
+                      {jobActionLoading ? "⟳ Accepting Request..." : "Accept Service Request →"}
                     </button>
                   </div>
                 )}
@@ -454,26 +543,28 @@ function Worker() {
                 {activeJob.status === "ACCEPTED" && (
                   <div className="job-step-action-box">
                     <div className="otp-action-header">
-                      <strong>🔑 Step 1: Enter Start OTP (Customer Code: 4821)</strong>
-                      <p>Ask the customer for their 4-digit Start OTP upon arriving at their doorstep.</p>
+                      <strong>🔑 Step 1: Enter Start PIN (Customer Code: {activeJob.start_otp || "4821"})</strong>
+                      <p>Ask the customer for their 4-digit Start PIN upon arriving at their doorstep.</p>
                     </div>
 
-                    <form onSubmit={handleStartJob} className="otp-inline-form">
+                    <form onSubmit={handleStartJob} className={`otp-inline-form ${shakeStart ? "shake-anim" : ""}`}>
                       <input
                         type="text"
                         maxLength={4}
-                        placeholder="Enter 4-digit Start OTP (e.g. 4821)"
+                        placeholder="Enter 4-digit Start PIN (e.g. 4821)"
                         value={enteredStartOtp}
                         onChange={(e) => setEnteredStartOtp(e.target.value.replace(/\D/g, ""))}
+                        disabled={verifyingStart}
                         className="form-control otp-input"
+                        autoComplete="off"
                         required
                       />
                       <button
                         type="submit"
                         className="primary-btn"
-                        disabled={jobActionLoading}
+                        disabled={verifyingStart}
                       >
-                        {jobActionLoading ? "Verifying..." : "Verify & Start Service"}
+                        {verifyingStart ? "⟳ Verifying Start PIN..." : "Verify Start PIN"}
                       </button>
                     </form>
                   </div>
@@ -483,26 +574,28 @@ function Worker() {
                 {activeJob.status === "IN_PROGRESS" && (
                   <div className="job-step-action-box in-progress-box">
                     <div className="otp-action-header">
-                      <strong>🔒 Step 2: Enter End OTP (Customer Code: 9134)</strong>
-                      <p>Once the repair is done and verified with the customer, enter their End OTP to complete the job and disburse payment.</p>
+                      <strong>🔒 Step 2: Enter Completion PIN (Customer Code: {activeJob.end_otp || "9134"})</strong>
+                      <p>Once the repair is done and verified with the customer, enter their Completion PIN to complete the job and disburse payment.</p>
                     </div>
 
-                    <form onSubmit={handleCompleteJob} className="otp-inline-form">
+                    <form onSubmit={handleCompleteJob} className={`otp-inline-form ${shakeEnd ? "shake-anim" : ""}`}>
                       <input
                         type="text"
                         maxLength={4}
-                        placeholder="Enter 4-digit End OTP (e.g. 9134)"
+                        placeholder="Enter 4-digit Completion PIN (e.g. 9134)"
                         value={enteredEndOtp}
                         onChange={(e) => setEnteredEndOtp(e.target.value.replace(/\D/g, ""))}
+                        disabled={verifyingEnd}
                         className="form-control otp-input"
+                        autoComplete="off"
                         required
                       />
                       <button
                         type="submit"
                         className="primary-btn"
-                        disabled={jobActionLoading}
+                        disabled={verifyingEnd}
                       >
-                        {jobActionLoading ? "Settling Job..." : "Verify & Complete Service"}
+                        {verifyingEnd ? "⟳ Verifying Completion PIN..." : "Verify Completion PIN"}
                       </button>
                     </form>
                   </div>
@@ -510,12 +603,20 @@ function Worker() {
 
                 {/* Status: COMPLETED */}
                 {activeJob.status === "COMPLETED" && (
-                  <div className="job-step-action-box completed-box">
-                    <div className="completed-check-icon">✓</div>
-                    <div>
-                      <strong>Job Completed & ₹199 Labour Disbursed!</strong>
-                      <p>Payment settled directly to your cooperative wallet with 0% platform fee deduction.</p>
+                  <div>
+                    <div className="job-step-action-box completed-box" style={{ marginBottom: "16px" }}>
+                      <div className="completed-check-icon">✓</div>
+                      <div>
+                        <strong>Job Completed & ₹199 Labour Disbursed!</strong>
+                        <p>Payment settled directly to your cooperative wallet with 0% platform fee deduction.</p>
+                      </div>
                     </div>
+
+                    <WarrantyCountdown
+                      warrantyExpiresAt={activeJob.warranty_expires_at}
+                      warrantyStartedAt={activeJob.warranty_started_at}
+                      status={activeJob.status}
+                    />
                   </div>
                 )}
               </div>

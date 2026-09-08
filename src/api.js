@@ -233,6 +233,28 @@ export const cancelBooking = (bookingId) =>
     method: "PATCH",
   });
 
+// Real Backend-Driven OTP Verification Handshakes
+export const verifyStartOtp = ({ booking_id, otp }) =>
+  request("/bookings/verify-start-otp", {
+    method: "POST",
+    body: JSON.stringify({
+      booking_id: Number(booking_id),
+      otp: String(otp).trim(),
+    }),
+  });
+
+export const verifyEndOtp = ({ booking_id, otp }) =>
+  request("/bookings/verify-end-otp", {
+    method: "POST",
+    body: JSON.stringify({
+      booking_id: Number(booking_id),
+      otp: String(otp).trim(),
+    }),
+  });
+
+export const getWelfareFundSummary = (societyId = 1) =>
+  request(`/bookings/welfare-fund/summary?society_id=${societyId}`);
+
 // Reviews API
 export const getWorkerReviews = (workerId) =>
   request(`/workers/${workerId}/reviews`);
