@@ -741,7 +741,7 @@ export default function PresentationMode() {
                         {quotation.items?.map((item, idx) => (
                           <div key={idx} className="quote-item-row" style={{ fontSize: "12px" }}>
                             <span>
-                              {item.name} × {item.qty}
+                              {item.title || item.name} × {item.qty}
                             </span>
                             <strong>+₹{item.price * item.qty}</strong>
                           </div>
@@ -1230,7 +1230,7 @@ export default function PresentationMode() {
                                     }}
                                   >
                                     <div style={{ flex: 1, marginRight: "8px" }}>
-                                      <div style={{ fontSize: "12px", fontWeight: 600, color: "#0f172a" }}>{item.name}</div>
+                                      <div style={{ fontSize: "12px", fontWeight: 600, color: "#0f172a" }}>{item.title || item.name}</div>
                                       <strong style={{ fontSize: "11px", color: "#059669" }}>+₹{item.price}</strong>
                                     </div>
 
@@ -1267,7 +1267,7 @@ export default function PresentationMode() {
                                 <tbody>
                                   {selectedQuoteItems.map((item) => (
                                     <tr key={item.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                                      <td style={{ padding: "4px 2px", fontWeight: 600 }}>{item.name}</td>
+                                      <td style={{ padding: "4px 2px", fontWeight: 600 }}>{item.title || item.name}</td>
                                       <td style={{ padding: "4px 2px" }}>₹{item.price}</td>
                                       <td style={{ padding: "4px 2px", textAlign: "center" }}>
                                         <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
