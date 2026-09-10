@@ -1,17 +1,7 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
-  getBooking,
-  getCustomerBookings,
-  createBooking,
-  createDemoBooking,
-  acceptBooking,
-  resetDemo,
-  cycleDemoScenario,
   DEMO_SCENARIOS,
-  verifyStartOtp,
-  verifyEndOtp,
-  getWorkers,
   getRateCardForBooking,
   getBookingQuotation,
   saveBookingQuotation,
@@ -20,7 +10,6 @@ import {
   getBookingWarranty,
   saveBookingWarranty,
   clearDemoBookingState,
-  completeBooking,
 } from "./api";
 import ServiceTimeline from "./ServiceTimeline";
 import WarrantyCountdown from "./WarrantyCountdown";
@@ -28,6 +17,7 @@ import "./App.css";
 
 /**
  * Real-Time Demo (Judge-Ready Presentation)
+ * 100% FRONTEND-ONLY DEMO STATE
  * LEFT: Customer Device (Sahāyu App)
  * RIGHT: Technician Terminal (Worker Portal)
  */
@@ -35,7 +25,7 @@ export default function PresentationMode() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // 5 Canonical Demo Scenarios Circular Rotation
+  // 5 Canonical Demo Scenarios Circular Rotation (Frontend-only IDs DEMO-001 ... DEMO-005)
   const [scenarioIndex, setScenarioIndex] = useState(() => {
     const pId = searchParams.get("booking_id");
     const foundIdx = DEMO_SCENARIOS.findIndex(
@@ -45,12 +35,12 @@ export default function PresentationMode() {
   });
 
   const [bookingId, setBookingId] = useState(
-    () => String(DEMO_SCENARIOS[scenarioIndex]?.booking_id || "63")
+    () => String(DEMO_SCENARIOS[scenarioIndex]?.booking_id || "DEMO-001")
   );
   const [booking, setBooking] = useState(
     () => DEMO_SCENARIOS[scenarioIndex] || DEMO_SCENARIOS[0]
   );
-  const [loading, setLoading] = useState(false);
+  const [loading] = useState(false);
   const [creatingDemo, setCreatingDemo] = useState(false);
   const [error, setError] = useState("");
 
@@ -79,9 +69,6 @@ export default function PresentationMode() {
   const [shakeStart, setShakeStart] = useState(false);
   const [shakeEnd, setShakeEnd] = useState(false);
 
-  // Polling ref to prevent concurrent fetches
-  const isFetchingRef = useRef(false);
-
   const quotation = bookingId ? getBookingQuotation(bookingId) : null;
   const paymentData = bookingId ? getBookingPayment(bookingId) : null;
   const storedWarranty = bookingId ? getBookingWarranty(bookingId) : null;
@@ -91,52 +78,8 @@ export default function PresentationMode() {
     return getRateCardForBooking(booking);
   }, [booking]);
 
-  // Fetch Booking authoritative state from backend
-  const fetchAuthoritativeBooking = useCallback(
-    async (id, isBackground = false) => {
-      if (!id) return null;
-      if (isFetchingRef.current) return null;
-      isFetchingRef.current = true;
-
-      try {
-        const data = await getBooking(id);
-        if (data && data.booking_id) {
-          setBooking((prev) => ({
-            ...(prev || {}),
-            ...data,
-            start_otp: data.start_otp || prev?.start_otp || "4821",
-            end_otp: data.end_otp || prev?.end_otp || "9134",
-            completion_otp: data.completion_otp || prev?.completion_otp || "9134",
-          }));
-          setError("");
-          return data;
-        }
-      } catch (err) {
-        if (!isBackground) {
-          console.debug(`Authoritative fetch note for #${id}:`, err);
-        }
-      } finally {
-        if (!isBackground) setLoading(false);
-        isFetchingRef.current = false;
-      }
-      return null;
-    },
-    []
-  );
-
-  // Authoritative fetch on mount & periodic polling to keep customer and worker synced
-  useEffect(() => {
-    fetchAuthoritativeBooking(bookingId, false);
-
-    const pollInterval = setInterval(() => {
-      fetchAuthoritativeBooking(bookingId, true);
-    }, 3000);
-
-    return () => clearInterval(pollInterval);
-  }, [bookingId, fetchAuthoritativeBooking]);
-
-  // Button Handler for "+ New Demo Booking" (Circular Scenario State Rotation with Backend Sync)
-  const handleCreateNewDemoBooking = async () => {
+  // Button Handler for "+ New Demo Booking" (Circular Scenario State Rotation with Frontend State)
+  const handleCreateNewDemoBooking = () => {
     setCreatingDemo(true);
     setError("");
     setOtpError("");
@@ -150,6 +93,16 @@ export default function PresentationMode() {
     // Reset local transient state values
     clearDemoBookingState(id);
     setBookingId(id);
+    setBooking({
+      ...activeScenario,
+      status: "ASSIGNED",
+      start_otp_verified_at: null,
+      end_otp_verified_at: null,
+      warranty_started_at: null,
+      warranty_expires_at: null,
+      payment_status: "PENDING",
+    });
+
     setEnteredStartOtp("");
     setEnteredEndOtp("");
     setSelectedQuoteItems([]);
@@ -157,41 +110,15 @@ export default function PresentationMode() {
     setPaymentSuccessData(null);
     setSearchParams({ booking_id: id }, { replace: true });
     setQuoteVersion((v) => v + 1);
-
-    // Synchronize backend with scenario index
-    try {
-      await cycleDemoScenario(nextIndex);
-    } catch {
-      // Handled
-    }
-
-    // Fetch authoritative canonical booking record from backend
-    try {
-      const fresh = await getBooking(id);
-      if (fresh && fresh.booking_id) {
-        setBooking({
-          ...activeScenario,
-          ...fresh,
-          start_otp: fresh.start_otp || activeScenario.start_otp || "4821",
-          end_otp: fresh.end_otp || activeScenario.end_otp || "9134",
-          completion_otp: fresh.completion_otp || activeScenario.completion_otp || "9134",
-        });
-      } else {
-        setBooking({ ...activeScenario });
-      }
-    } catch {
-      setBooking({ ...activeScenario });
-    } finally {
-      setCreatingDemo(false);
-    }
+    setCreatingDemo(false);
   };
 
   const handleCreateDemoBooking = handleCreateNewDemoBooking;
 
-  // Button Handler for "Reset Demo" (Resets CURRENT active scenario back to 'ASSIGNED' with Backend Sync)
-  const handleConfirmResetDemo = async () => {
+  // Button Handler for "Reset Demo" (Resets CURRENT active scenario back to 'ASSIGNED' in Frontend)
+  const handleConfirmResetDemo = () => {
     const currentScenario = DEMO_SCENARIOS[scenarioIndex] || DEMO_SCENARIOS[0];
-    const id = String(booking?.booking_id || currentScenario.booking_id);
+    const id = String(currentScenario.booking_id);
 
     setError("");
     setOtpError("");
@@ -205,30 +132,18 @@ export default function PresentationMode() {
 
     clearDemoBookingState(id);
 
-    try {
-      await resetDemo(id);
-      await cycleDemoScenario(scenarioIndex);
-    } catch {
-      // Handled
-    }
-
-    // Fetch canonical fresh booking state from backend
-    try {
-      const fresh = await getBooking(id);
-      if (fresh && fresh.booking_id) {
-        setBooking({
-          ...currentScenario,
-          ...fresh,
-          start_otp: fresh.start_otp || currentScenario.start_otp || "4821",
-          end_otp: fresh.end_otp || currentScenario.end_otp || "9134",
-          completion_otp: fresh.completion_otp || currentScenario.completion_otp || "9134",
-        });
-      } else {
-        setBooking({ ...currentScenario, status: "ASSIGNED" });
-      }
-    } catch {
-      setBooking({ ...currentScenario, status: "ASSIGNED" });
-    }
+    setBooking({
+      ...currentScenario,
+      status: "ASSIGNED",
+      start_otp: currentScenario.start_otp || "4821",
+      end_otp: currentScenario.end_otp || "9134",
+      completion_otp: currentScenario.completion_otp || "9134",
+      start_otp_verified_at: null,
+      end_otp_verified_at: null,
+      warranty_started_at: null,
+      warranty_expires_at: null,
+      payment_status: "PENDING",
+    });
   };
 
   // Clear error state whenever booking status updates
@@ -237,15 +152,12 @@ export default function PresentationMode() {
     setOtpError("");
   }, [booking?.status]);
 
-  // Technician accepts service request (Backend-safe transition)
-  const handleAcceptJob = async () => {
+  // Step 1: Technician accepts service request (ASSIGNED -> ACCEPTED)
+  const handleAcceptJob = () => {
     if (!booking) return;
 
-    // Check actual booking status: ONLY proceed if ASSIGNED
     const currentStatus = (booking.status || "").toUpperCase();
     if (currentStatus !== "ASSIGNED") {
-      // Re-fetch backend booking to ensure UI reflects backend truth
-      await fetchAuthoritativeBooking(booking.booking_id, false);
       return;
     }
 
@@ -253,37 +165,18 @@ export default function PresentationMode() {
     setOtpError("");
     setError("");
 
-    try {
-      const updated = await acceptBooking(booking.booking_id);
-      if (updated && updated.booking_id) {
-        setBooking((prev) => ({
-          ...(prev || {}),
-          ...updated,
-          status: updated.status || "ACCEPTED",
-        }));
-      } else {
-        setBooking((prev) => ({
-          ...(prev || {}),
-          status: "ACCEPTED",
-        }));
-      }
-      await fetchAuthoritativeBooking(booking.booking_id, true);
-    } catch (err) {
-      // If transition rejected (e.g. backend is already COMPLETED or CANCELLED), re-fetch canonical state
-      const fresh = await fetchAuthoritativeBooking(booking.booking_id, false);
-      const freshStatus = (fresh?.status || booking?.status || "").toUpperCase();
-      if (freshStatus === "ASSIGNED") {
-        setOtpError(err.message || "Failed to accept booking.");
-      }
-    } finally {
-      setAcceptingJob(false);
-    }
+    setBooking((prev) => ({
+      ...(prev || {}),
+      status: "ACCEPTED",
+    }));
+
+    setAcceptingJob(false);
   };
 
   const handleAcceptOrder = handleAcceptJob;
 
-  // Technician verifies Start PIN
-  const handleVerifyStartPin = async (e) => {
+  // Step 2: Technician verifies Start PIN (ACCEPTED -> IN_PROGRESS)
+  const handleVerifyStartPin = (e) => {
     if (e) e.preventDefault();
     if (!booking) return;
 
@@ -300,32 +193,28 @@ export default function PresentationMode() {
       return;
     }
 
+    const expectedPin = String(booking?.start_otp || "4821").trim();
+    if (trimmed !== expectedPin) {
+      setOtpError(`✕ Invalid Start PIN. Please enter ${expectedPin}.`);
+      triggerShake("start");
+      return;
+    }
+
     setVerifyingStart(true);
     setOtpError("");
 
-    try {
-      await verifyStartOtp({
-        booking_id: booking.booking_id,
-        otp: trimmed,
-      });
+    setBooking((prev) => ({
+      ...(prev || {}),
+      status: "IN_PROGRESS",
+      start_otp_verified_at: new Date().toISOString(),
+    }));
 
-      setEnteredStartOtp("");
-      await fetchAuthoritativeBooking(booking.booking_id, true);
-    } catch (err) {
-      const msg = err.message || "Invalid Start PIN.";
-      setOtpError(
-        msg.includes("Invalid Start PIN")
-          ? `✕ ${msg}`
-          : `✕ Invalid Start PIN: ${msg}`
-      );
-      triggerShake("start");
-    } finally {
-      setVerifyingStart(false);
-    }
+    setEnteredStartOtp("");
+    setVerifyingStart(false);
   };
 
-  // Technician verifies Completion PIN & transitions to PAYMENT_PENDING
-  const handleVerifyEndPin = async (e) => {
+  // Step 5: Technician verifies Completion PIN (IN_PROGRESS -> PAYMENT_PENDING)
+  const handleVerifyEndPin = (e) => {
     if (e) e.preventDefault();
     if (!booking) return;
 
@@ -342,29 +231,26 @@ export default function PresentationMode() {
       return;
     }
 
+    const expectedPin = String(booking?.end_otp || booking?.completion_otp || "9134").trim();
+    if (trimmed !== expectedPin) {
+      setOtpError(`✕ Invalid Completion PIN. Please enter ${expectedPin}.`);
+      triggerShake("end");
+      return;
+    }
+
     setVerifyingEnd(true);
     setOtpError("");
 
-    try {
-      await verifyEndOtp({
-        booking_id: booking.booking_id,
-        otp: trimmed,
-      });
+    const verifiedAt = new Date().toISOString();
+    setBooking((prev) => ({
+      ...(prev || {}),
+      status: "PAYMENT_PENDING",
+      end_otp_verified_at: verifiedAt,
+    }));
 
-      setEnteredEndOtp("");
-      setIsPaymentPending(true);
-      await fetchAuthoritativeBooking(booking.booking_id, true);
-    } catch (err) {
-      const msg = err.message || "Invalid Completion PIN.";
-      setOtpError(
-        msg.includes("Invalid")
-          ? `✕ ${msg}`
-          : `✕ Invalid Completion PIN: ${msg}`
-      );
-      triggerShake("end");
-    } finally {
-      setVerifyingEnd(false);
-    }
+    setEnteredEndOtp("");
+    setIsPaymentPending(true);
+    setVerifyingEnd(false);
   };
 
   const triggerShake = (type) => {
@@ -458,58 +344,48 @@ export default function PresentationMode() {
     return base;
   };
 
-  // Payment Execution (Demo Pay)
-  const handleCustomerExecutePayment = async () => {
+  // Payment Execution (Frontend Demo Pay)
+  const handleCustomerExecutePayment = () => {
     if (!booking) return;
     setPayingDemo(true);
 
-    try {
-      const finalAmount = calculatePayableTotal();
-      const paidAt = new Date().toISOString();
-      const expiresAt = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
+    const finalAmount = calculatePayableTotal();
+    const paidAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
 
-      const pData = {
-        booking_id: booking.booking_id,
-        amount: finalAmount,
-        status: "PAID",
-        payment_method: selectedPaymentMethod,
-        paid_at: paidAt,
-      };
-      saveBookingPayment(booking.booking_id, pData);
+    const pData = {
+      booking_id: booking.booking_id,
+      amount: finalAmount,
+      status: "PAID",
+      payment_method: selectedPaymentMethod,
+      paid_at: paidAt,
+    };
+    saveBookingPayment(booking.booking_id, pData);
 
-      const wData = {
-        started_at: paidAt,
-        expires_at: expiresAt,
-        active: true,
-      };
-      saveBookingWarranty(booking.booking_id, wData);
+    const wData = {
+      started_at: paidAt,
+      expires_at: expiresAt,
+      active: true,
+    };
+    saveBookingWarranty(booking.booking_id, wData);
 
-      setQuoteVersion((v) => v + 1);
+    setQuoteVersion((v) => v + 1);
 
-      try {
-        await completeBooking(booking.booking_id);
-      } catch (err) {
-        console.debug("Backend complete sync:", err);
-      }
+    setBooking((prev) => ({
+      ...prev,
+      status: "COMPLETED",
+      payment_status: "PAID",
+      warranty_started_at: paidAt,
+      warranty_expires_at: expiresAt,
+    }));
 
-      setBooking((prev) => ({
-        ...prev,
-        status: "COMPLETED",
-        payment_status: "PAID",
-        warranty_started_at: paidAt,
-        warranty_expires_at: expiresAt,
-      }));
+    setPaymentSuccessData({
+      amount: finalAmount,
+      paidAt: paidAt,
+    });
 
-      setPaymentSuccessData({
-        amount: finalAmount,
-        paidAt: paidAt,
-      });
-
-      setIsPaymentPending(false);
-      await fetchAuthoritativeBooking(booking.booking_id, true);
-    } finally {
-      setPayingDemo(false);
-    }
+    setIsPaymentPending(false);
+    setPayingDemo(false);
   };
 
   const isPaid = paymentData?.status === "PAID" || booking?.payment_status === "PAID";
@@ -970,8 +846,11 @@ export default function PresentationMode() {
                       ₹{paymentSuccessData?.amount || calculatePayableTotal()} Paid
                     </div>
                     <ul style={{ margin: "6px 0 0", paddingLeft: "18px", fontSize: "12px", color: "#047857" }}>
-                      <li>Worker settlement recorded</li>
-                      <li>Gullak contribution recorded</li>
+                      <li>✓ Payment Successful</li>
+                      <li>✓ Booking Completed</li>
+                      <li>✓ 3-Day Workmanship Protection Active</li>
+                      <li>Worker settlement recorded (₹199 labour floor)</li>
+                      <li>Gullak contribution recorded (₹10)</li>
                     </ul>
                   </div>
                 )}
