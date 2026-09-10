@@ -13,6 +13,11 @@ import {
   getRateCardForBooking,
   getBookingQuotation,
   saveBookingQuotation,
+  getBookingPayment,
+  saveBookingPayment,
+  getBookingWarranty,
+  saveBookingWarranty,
+  completeBooking,
 } from "./api";
 import WarrantyCountdown from "./WarrantyCountdown";
 import "./App.css";
@@ -34,6 +39,8 @@ function Worker() {
   const [jobActionLoading, setJobActionLoading] = useState(false);
   const [verifyingStart, setVerifyingStart] = useState(false);
   const [verifyingEnd, setVerifyingEnd] = useState(false);
+  const [isPaymentPending, setIsPaymentPending] = useState(false);
+  const [payingDemo, setPayingDemo] = useState(false);
   const [jobMessage, setJobMessage] = useState("");
   const [jobError, setJobError] = useState("");
   const [shakeStart, setShakeStart] = useState(false);
@@ -247,6 +254,14 @@ function Worker() {
     }
   };
 
+  const calculatePayableTotal = () => {
+    const base = 239;
+    if (quotation && quotation.status === "APPROVED") {
+      return base + (quotation.additional_amount || 0);
+    }
+    return base;
+  };
+
   const handleCompleteJob = async (e) => {
     if (e) e.preventDefault();
     if (!activeJob) return;
@@ -271,14 +286,23 @@ function Worker() {
       });
 
       // ONLY transition state upon backend confirmation
-      const freshBooking = await getBooking(activeJob.booking_id);
-      setActiveJob(freshBooking);
+      const freshBooking = await getBooking(activeJob.booking_id).catch(() => null);
+      if (freshBooking) {
+        setActiveJob(freshBooking);
+      } else {
+        setActiveJob((prev) => ({
+          ...(prev || {}),
+          status: "PAYMENT_PENDING",
+          end_otp_verified_at: new Date().toISOString(),
+        }));
+      }
 
+      setIsPaymentPending(true);
       setConsensusSuccess({
         type: "END",
-        txnId: res.transaction_id || `TXN-SAHAYU-${String(activeJob.booking_id).padStart(6, "0")}`,
-        timestamp: res.completion_timestamp || new Date().toISOString(),
-        message: res.message || "Job completed successfully. Payment settled & 72-hour warranty activated.",
+        txnId: res?.transaction_id || `TXN-SAHAYU-${String(activeJob.booking_id).padStart(6, "0")}`,
+        timestamp: res?.completion_timestamp || new Date().toISOString(),
+        message: res?.message || "Completion PIN verified. Ready for payment settlement.",
       });
 
       setEnteredEndOtp("");
@@ -293,6 +317,65 @@ function Worker() {
       setTimeout(() => setShakeEnd(false), 600);
     } finally {
       setVerifyingEnd(false);
+    }
+  };
+
+  const handleSimulatePayment = async () => {
+    if (!activeJob) return;
+    setPayingDemo(true);
+    setJobError("");
+
+    try {
+      const finalAmount = calculatePayableTotal();
+      const paidAt = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
+
+      const pData = {
+        booking_id: activeJob.booking_id,
+        amount: finalAmount,
+        status: "PAID",
+        paid_at: paidAt,
+      };
+      saveBookingPayment(activeJob.booking_id, pData);
+
+      const wData = {
+        started_at: paidAt,
+        expires_at: expiresAt,
+        active: true,
+      };
+      saveBookingWarranty(activeJob.booking_id, wData);
+
+      try {
+        await completeBooking(activeJob.booking_id);
+      } catch (err) {
+        console.debug("Backend complete sync note:", err);
+      }
+
+      const freshBooking = await getBooking(activeJob.booking_id).catch(() => null);
+      if (freshBooking) {
+        setActiveJob({
+          ...freshBooking,
+          status: "COMPLETED",
+          payment_status: "PAID",
+          warranty_started_at: paidAt,
+          warranty_expires_at: expiresAt,
+        });
+      } else {
+        setActiveJob((prev) => ({
+          ...(prev || {}),
+          status: "COMPLETED",
+          payment_status: "PAID",
+          warranty_started_at: paidAt,
+          warranty_expires_at: expiresAt,
+        }));
+      }
+
+      setIsPaymentPending(false);
+      setJobMessage("✓ Payment received & 72-hour workmanship protection activated!");
+    } catch (err) {
+      setJobError(err.message || "Failed to process payment.");
+    } finally {
+      setPayingDemo(false);
     }
   };
 
@@ -591,7 +674,27 @@ function Worker() {
           {jobMessage && <div className="admin-toast-success">{jobMessage}</div>}
           {jobError && <div className="admin-toast-error">{jobError}</div>}
 
-          {activeJob ? (
+          {activeJob ? (() => {
+            const rawStatus = (activeJob.status || "").toUpperCase();
+            const isPaid = activeJob.payment_status === "PAID" || rawStatus === "COMPLETED";
+            const isPendingPayment = isPaymentPending || rawStatus === "PAYMENT_PENDING" || rawStatus === "WORK_COMPLETED";
+
+            let normStatus = rawStatus;
+            if (isPaid || rawStatus === "COMPLETED") {
+              normStatus = "COMPLETED";
+            } else if (isPendingPayment) {
+              normStatus = "PAYMENT_PENDING";
+            } else if (rawStatus === "IN_PROGRESS") {
+              normStatus = "IN_PROGRESS";
+            } else if (rawStatus === "ACCEPTED") {
+              normStatus = "ACCEPTED";
+            } else if (rawStatus === "ASSIGNED" || rawStatus === "PENDING") {
+              normStatus = "ASSIGNED";
+            } else if (rawStatus === "CANCELLED") {
+              normStatus = "CANCELLED";
+            }
+
+            return (
             <div className="active-job-card">
               <div className="job-card-header">
                 <div>
@@ -603,8 +706,8 @@ function Worker() {
                 </div>
 
                 <div className="job-status-box">
-                  <span className={`status-pill ${activeJob.status.toLowerCase()}`}>
-                    ● {activeJob.status === "ACCEPTED" ? "WORKER ARRIVED" : activeJob.status}
+                  <span className={`status-pill ${normStatus.toLowerCase()}`}>
+                    ● {normStatus === "ACCEPTED" ? "WORKER ARRIVED" : normStatus === "IN_PROGRESS" ? "IN PROGRESS" : normStatus === "PAYMENT_PENDING" ? "PAYMENT PENDING" : normStatus}
                   </span>
                   <div className="job-payout-box">
                     <small>Your Payout:</small>
@@ -615,7 +718,7 @@ function Worker() {
 
               <div className="job-card-body">
                 {/* Status: CANCELLED -> Notice */}
-                {activeJob.status === "CANCELLED" && (
+                {normStatus === "CANCELLED" && (
                   <div className="job-step-action-box" style={{ background: "#fef2f2", borderColor: "#f87171" }}>
                     <strong style={{ color: "#991b1b" }}>Booking is Cancelled</strong>
                     <p style={{ color: "#b91c1c", marginTop: "4px" }}>This booking order has been cancelled.</p>
@@ -623,7 +726,7 @@ function Worker() {
                 )}
 
                 {/* Status: ASSIGNED -> Worker accepts job */}
-                {(activeJob.status || "").toUpperCase() === "ASSIGNED" && (
+                {normStatus === "ASSIGNED" && (
                   <div className="job-step-action-box">
                     <p>New service request in your area. Accept to dispatch and view customer location.</p>
                     <button
@@ -637,7 +740,7 @@ function Worker() {
                 )}
 
                 {/* Status: ACCEPTED -> Worker arrives, requests Start OTP */}
-                {activeJob.status === "ACCEPTED" && (
+                {normStatus === "ACCEPTED" && (
                   <div className="job-step-action-box">
                     <div className="otp-action-header">
                       <strong>🔑 Step 1: Enter Start PIN (Customer Code: {activeJob.start_otp || "4821"})</strong>
@@ -668,7 +771,7 @@ function Worker() {
                 )}
 
                 {/* Status: IN_PROGRESS -> On-Site Inspection, Additional Quotation, and End OTP */}
-                {activeJob.status === "IN_PROGRESS" && (
+                {normStatus === "IN_PROGRESS" && (
                   <div>
                     {quoteSuccessMsg && (
                       <div className="admin-toast-success" style={{ marginBottom: "14px" }}>
@@ -681,7 +784,7 @@ function Worker() {
                       <div className="quotation-panel-header">
                         <div>
                           <span className="quote-badge">ON-SITE INSPECTION</span>
-                          <h4>Additional Work Quotation (Optional)</h4>
+                          <h4>Add-on Service (Optional)</h4>
                           <p>
                             If parts replacement or extra labour is required beyond the ₹239 base inspection, select items from the cooperative rate card for customer approval.
                           </p>
@@ -693,7 +796,7 @@ function Worker() {
                             className="secondary-btn"
                             onClick={() => setShowQuoteBuilder(true)}
                           >
-                            + Add Extra Parts / Labour
+                            + Add Service / Material
                           </button>
                         )}
                       </div>
@@ -723,18 +826,24 @@ function Worker() {
                           <div className="quote-items-table">
                             {quotation.items?.map((item, idx) => (
                               <div key={idx} className="quote-item-row">
-                                <span>{item.name} × {item.qty}</span>
+                                <span>{item.name || item.title} × {item.qty}</span>
                                 <strong>₹{item.price * item.qty}</strong>
                               </div>
                             ))}
                             <div className="quote-item-row" style={{ borderTop: "1px dashed #cbd5e1", paddingTop: "6px" }}>
-                              <span>Base Inspection & Service Floor:</span>
-                              <strong>₹239</strong>
+                              <span>Initial Inspection:</span>
+                              <span>₹239</span>
                             </div>
+                            {quotation.status === "APPROVED" && (
+                              <div className="quote-item-row" style={{ color: "#059669", fontWeight: 600 }}>
+                                <span>Approved Add-ons:</span>
+                                <strong>+₹{quotation.additional_amount}</strong>
+                              </div>
+                            )}
                             <div className="quote-item-row quote-total-row">
-                              <span>Total Service Amount:</span>
+                              <span>Final Bill:</span>
                               <strong style={{ color: "#059669", fontSize: "16px" }}>
-                                ₹{quotation.status === "APPROVED" ? quotation.total_with_base : 239}
+                                ₹{quotation.status === "APPROVED" ? 239 + quotation.additional_amount : 239}
                               </strong>
                             </div>
                           </div>
@@ -780,7 +889,7 @@ function Worker() {
                                   onClick={() => handleToggleItemInQuote(item)}
                                 >
                                   <div style={{ display: "flex", justifyContent: "space-between" }}>
-                                    <strong>{item.name}</strong>
+                                    <strong>{item.name || item.title}</strong>
                                     <span className="rate-price">₹{item.price}</span>
                                   </div>
                                   <small style={{ color: "#64748b" }}>{item.category}</small>
@@ -858,7 +967,7 @@ function Worker() {
                     {/* Step 2: Completion PIN Handshake Form */}
                     <div className="job-step-action-box in-progress-box">
                       <div className="otp-action-header">
-                        <strong>🔒 Step 2: Enter Completion PIN (Customer Code: {activeJob.end_otp || "9134"})</strong>
+                        <strong>🔒 Step 2: Enter Completion PIN (Customer Code: {activeJob.end_otp || activeJob.completion_otp || "9134"})</strong>
                         <p>
                           Once all physical work is finished and verified by customer, enter their Completion PIN to validate completion.
                         </p>
@@ -888,8 +997,51 @@ function Worker() {
                   </div>
                 )}
 
+                {/* Status: PAYMENT_PENDING -> Payment Demo */}
+                {normStatus === "PAYMENT_PENDING" && (
+                  <div className="job-step-action-box payment-pending-box" style={{ background: "#f8fafc", border: "2px solid #059669", borderRadius: "10px", padding: "16px", marginBottom: "16px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                      <strong style={{ fontSize: "15px", color: "#0f172a" }}>💳 Payment Demo</strong>
+                      <span className="status-badge yellow" style={{ fontSize: "11px", padding: "3px 8px" }}>
+                        AWAITING PAYMENT
+                      </span>
+                    </div>
+
+                    <p style={{ fontSize: "12px", color: "#475569", margin: "0 0 12px" }}>
+                      Completion PIN verified! Confirm or simulate customer payment for the final amount.
+                    </p>
+
+                    <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px", marginBottom: "14px", fontSize: "13px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", color: "#475569", marginBottom: "6px" }}>
+                        <span>Initial Inspection / Booking</span>
+                        <span>₹239</span>
+                      </div>
+                      {quotation && quotation.status === "APPROVED" && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#059669", fontWeight: 600, marginBottom: "6px" }}>
+                          <span>Approved Add-ons</span>
+                          <span>+₹{quotation.additional_amount}</span>
+                        </div>
+                      )}
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, color: "#0f172a", borderTop: "1px solid #e2e8f0", paddingTop: "8px", marginTop: "4px", fontSize: "14px" }}>
+                        <span>Final Amount</span>
+                        <strong style={{ color: "#059669" }}>₹{calculatePayableTotal()}</strong>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="primary-btn full-btn"
+                      style={{ width: "100%", padding: "10px 14px", background: "#059669", borderColor: "#059669", fontSize: "13px", fontWeight: 700 }}
+                      onClick={handleSimulatePayment}
+                      disabled={payingDemo}
+                    >
+                      {payingDemo ? "⟳ Processing Payment..." : `[ Simulate Payment ₹${calculatePayableTotal()} ]`}
+                    </button>
+                  </div>
+                )}
+
                 {/* Status: COMPLETED */}
-                {activeJob.status === "COMPLETED" && (
+                {normStatus === "COMPLETED" && (
                   <div>
                     <div className="job-step-action-box completed-box" style={{ marginBottom: "16px" }}>
                       <div className="completed-check-icon">✓</div>
@@ -908,7 +1060,8 @@ function Worker() {
                 )}
               </div>
             </div>
-          ) : (
+            );
+          })() : (
             <div className="empty-job-card">
               <div className="empty-icon">🛋️</div>
               <h3>No Active Jobs Right Now</h3>
