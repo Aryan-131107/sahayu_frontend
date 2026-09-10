@@ -164,6 +164,16 @@ function Worker() {
   // Job Queue Actions
   const handleAcceptJob = async () => {
     if (!activeJob) return;
+    if ((activeJob.status || "").toUpperCase() !== "ASSIGNED") {
+      try {
+        const fresh = await getBooking(activeJob.booking_id);
+        setActiveJob(fresh);
+      } catch {
+        // Handled
+      }
+      return;
+    }
+
     setJobActionLoading(true);
     setJobError("");
     setJobMessage("");
@@ -174,7 +184,15 @@ function Worker() {
       setActiveJob(updated);
       setJobMessage(`✓ Job #${activeJob.booking_id} accepted! Status updated to WORKER ARRIVED.`);
     } catch (err) {
-      setJobError(err.message || "Failed to accept booking.");
+      try {
+        const fresh = await getBooking(activeJob.booking_id);
+        setActiveJob(fresh);
+      } catch {
+        // Handled
+      }
+      if ((activeJob.status || "").toUpperCase() === "ASSIGNED") {
+        setJobError(err.message || "Failed to accept booking.");
+      }
     } finally {
       setJobActionLoading(false);
     }
@@ -604,8 +622,8 @@ function Worker() {
                   </div>
                 )}
 
-                {/* Status: PENDING / ASSIGNED -> Worker accepts job */}
-                {(activeJob.status === "PENDING" || activeJob.status === "ASSIGNED") && (
+                {/* Status: ASSIGNED -> Worker accepts job */}
+                {(activeJob.status || "").toUpperCase() === "ASSIGNED" && (
                   <div className="job-step-action-box">
                     <p>New service request in your area. Accept to dispatch and view customer location.</p>
                     <button

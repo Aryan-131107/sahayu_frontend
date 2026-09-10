@@ -91,11 +91,11 @@ export default function PresentationMode() {
     return getRateCardForBooking(booking);
   }, [booking]);
 
-  // Fetch Booking authoritative state
+  // Fetch Booking authoritative state from backend
   const fetchAuthoritativeBooking = useCallback(
     async (id, isBackground = false) => {
-      if (!id) return;
-      if (isFetchingRef.current) return;
+      if (!id) return null;
+      if (isFetchingRef.current) return null;
       isFetchingRef.current = true;
 
       try {
@@ -109,60 +109,78 @@ export default function PresentationMode() {
             completion_otp: data.completion_otp || prev?.completion_otp || "9134",
           }));
           setError("");
+          return data;
         }
       } catch (err) {
         if (!isBackground) {
-          // If custom ID is not in backend yet, maintain scenario integrity
           console.debug(`Authoritative fetch note for #${id}:`, err);
         }
       } finally {
         if (!isBackground) setLoading(false);
         isFetchingRef.current = false;
       }
+      return null;
     },
     []
   );
 
-  // Button Handler for "+ New Demo Booking" (Circular Scenario State Rotation)
+  // Authoritative fetch on mount & periodic polling to keep customer and worker synced
+  useEffect(() => {
+    fetchAuthoritativeBooking(bookingId, false);
+
+    const pollInterval = setInterval(() => {
+      fetchAuthoritativeBooking(bookingId, true);
+    }, 3000);
+
+    return () => clearInterval(pollInterval);
+  }, [bookingId, fetchAuthoritativeBooking]);
+
+  // Button Handler for "+ New Demo Booking" (Circular Scenario State Rotation with Backend Sync)
   const handleCreateNewDemoBooking = async () => {
     setCreatingDemo(true);
+    setError("");
+    setOtpError("");
+
     const nextIndex = (scenarioIndex + 1) % DEMO_SCENARIOS.length;
     setScenarioIndex(nextIndex);
 
     const activeScenario = DEMO_SCENARIOS[nextIndex];
     const id = String(activeScenario.booking_id);
 
-    // Reset state values
+    // Reset local transient state values
     clearDemoBookingState(id);
     setBookingId(id);
-    setBooking({
-      ...activeScenario,
-      status: "ASSIGNED",
-      start_otp: "4821",
-      completion_otp: "9134",
-      end_otp: "9134",
-      start_otp_verified_at: null,
-      end_otp_verified_at: null,
-      warranty_started_at: null,
-      warranty_expires_at: null,
-      payment_status: "PENDING",
-    });
-
     setEnteredStartOtp("");
     setEnteredEndOtp("");
     setSelectedQuoteItems([]);
     setIsPaymentPending(false);
     setPaymentSuccessData(null);
-    setError("");
-    setOtpError("");
     setSearchParams({ booking_id: id }, { replace: true });
     setQuoteVersion((v) => v + 1);
 
-    // Trigger backend sync POST /api/demo/cycle-scenario to ensure backend parity
+    // Synchronize backend with scenario index
     try {
       await cycleDemoScenario(nextIndex);
     } catch {
-      // Backend parity handled
+      // Handled
+    }
+
+    // Fetch authoritative canonical booking record from backend
+    try {
+      const fresh = await getBooking(id);
+      if (fresh && fresh.booking_id) {
+        setBooking({
+          ...activeScenario,
+          ...fresh,
+          start_otp: fresh.start_otp || activeScenario.start_otp || "4821",
+          end_otp: fresh.end_otp || activeScenario.end_otp || "9134",
+          completion_otp: fresh.completion_otp || activeScenario.completion_otp || "9134",
+        });
+      } else {
+        setBooking({ ...activeScenario });
+      }
+    } catch {
+      setBooking({ ...activeScenario });
     } finally {
       setCreatingDemo(false);
     }
@@ -170,7 +188,7 @@ export default function PresentationMode() {
 
   const handleCreateDemoBooking = handleCreateNewDemoBooking;
 
-  // Button Handler for "Reset Demo" (Resets CURRENT active scenario back to 'ASSIGNED' without switching trade)
+  // Button Handler for "Reset Demo" (Resets CURRENT active scenario back to 'ASSIGNED' with Backend Sync)
   const handleConfirmResetDemo = async () => {
     const currentScenario = DEMO_SCENARIOS[scenarioIndex] || DEMO_SCENARIOS[0];
     const id = String(booking?.booking_id || currentScenario.booking_id);
@@ -187,24 +205,29 @@ export default function PresentationMode() {
 
     clearDemoBookingState(id);
 
-    setBooking({
-      ...currentScenario,
-      status: "ASSIGNED",
-      start_otp: "4821",
-      completion_otp: "9134",
-      end_otp: "9134",
-      start_otp_verified_at: null,
-      end_otp_verified_at: null,
-      warranty_started_at: null,
-      warranty_expires_at: null,
-      payment_status: "PENDING",
-    });
-
     try {
       await resetDemo(id);
       await cycleDemoScenario(scenarioIndex);
     } catch {
       // Handled
+    }
+
+    // Fetch canonical fresh booking state from backend
+    try {
+      const fresh = await getBooking(id);
+      if (fresh && fresh.booking_id) {
+        setBooking({
+          ...currentScenario,
+          ...fresh,
+          start_otp: fresh.start_otp || currentScenario.start_otp || "4821",
+          end_otp: fresh.end_otp || currentScenario.end_otp || "9134",
+          completion_otp: fresh.completion_otp || currentScenario.completion_otp || "9134",
+        });
+      } else {
+        setBooking({ ...currentScenario, status: "ASSIGNED" });
+      }
+    } catch {
+      setBooking({ ...currentScenario, status: "ASSIGNED" });
     }
   };
 
@@ -214,11 +237,15 @@ export default function PresentationMode() {
     setOtpError("");
   }, [booking?.status]);
 
-  // Technician accepts service request
+  // Technician accepts service request (Backend-safe transition)
   const handleAcceptJob = async () => {
     if (!booking) return;
+
+    // Check actual booking status: ONLY proceed if ASSIGNED
     const currentStatus = (booking.status || "").toUpperCase();
-    if (currentStatus !== "ASSIGNED" && currentStatus !== "PENDING") {
+    if (currentStatus !== "ASSIGNED") {
+      // Re-fetch backend booking to ensure UI reflects backend truth
+      await fetchAuthoritativeBooking(booking.booking_id, false);
       return;
     }
 
@@ -232,7 +259,7 @@ export default function PresentationMode() {
         setBooking((prev) => ({
           ...(prev || {}),
           ...updated,
-          status: "ACCEPTED",
+          status: updated.status || "ACCEPTED",
         }));
       } else {
         setBooking((prev) => ({
@@ -242,7 +269,12 @@ export default function PresentationMode() {
       }
       await fetchAuthoritativeBooking(booking.booking_id, true);
     } catch (err) {
-      setOtpError(err.message || "Failed to accept booking.");
+      // If transition rejected (e.g. backend is already COMPLETED or CANCELLED), re-fetch canonical state
+      const fresh = await fetchAuthoritativeBooking(booking.booking_id, false);
+      const freshStatus = (fresh?.status || booking?.status || "").toUpperCase();
+      if (freshStatus === "ASSIGNED") {
+        setOtpError(err.message || "Failed to accept booking.");
+      }
     } finally {
       setAcceptingJob(false);
     }
@@ -1045,8 +1077,8 @@ export default function PresentationMode() {
                     </div>
                   )}
 
-                  {/* STATE 1: PENDING / ASSIGNED -> Accept Booking */}
-                  {(normStatus === "PENDING" || normStatus === "ASSIGNED") && (
+                  {/* STATE 1: ASSIGNED -> Accept Booking */}
+                  {normStatus === "ASSIGNED" && (
                     <div className="terminal-step-box">
                       <h4>New Service Order Assigned</h4>
                       <p>

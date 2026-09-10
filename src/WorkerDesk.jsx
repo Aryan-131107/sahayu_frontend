@@ -63,8 +63,8 @@ export default function WorkerDesk({
         </div>
       )}
 
-      {/* Conditional Rendering Guard: Render ONLY when ASSIGNED or PENDING */}
-      {(normalizedStatus === "ASSIGNED" || normalizedStatus === "PENDING") && (
+      {/* Conditional Rendering Guard: Render ONLY when ASSIGNED */}
+      {normalizedStatus === "ASSIGNED" && (
         <div className="terminal-step-box" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "14px", marginBottom: "14px" }}>
           <h4 style={{ margin: 0, color: "#1e293b", fontSize: "14px", fontWeight: 700 }}>New Service Order Assigned</h4>
           <p style={{ margin: "4px 0 10px", fontSize: "12px", color: "#64748b" }}>
