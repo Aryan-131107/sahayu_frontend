@@ -92,12 +92,12 @@ export default function WarrantyCountdown({
       <div className={`warranty-card pending-warranty ${compact ? "compact" : ""}`}>
         <div className="warranty-icon-badge">🛡️</div>
         <div className="warranty-info">
-          <h4>3-Day Workmanship Guarantee</h4>
+          <h4>72-Hour Workmanship Guarantee</h4>
           <p>
-            Cooperative Protection: Automatically activates upon completion & End OTP handshake.
+            Cooperative Protection: Automatically activates upon completion & payment settlement.
           </p>
         </div>
-        <span className="guarantee-status-tag pending">ACTIVATES ON COMPLETION</span>
+        <span className="guarantee-status-tag pending">ACTIVATES ON COMPLETION & PAYMENT SETTLEMENT</span>
       </div>
     );
   }

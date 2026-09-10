@@ -8,6 +8,8 @@ import {
   saveBookingQuotation,
   getBookingPayment,
   saveBookingPayment,
+  getBookingWarranty,
+  saveBookingWarranty,
   completeBooking,
 } from "./api";
 import ServiceTimeline from "./ServiceTimeline";
@@ -39,11 +41,13 @@ function MyBookings() {
 
   // Quotation & Payment State Trigger
   const [, setQuoteVersion] = useState(0);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("UPI");
   const [payingDemo, setPayingDemo] = useState(false);
   const [paymentSuccessToast, setPaymentSuccessToast] = useState("");
 
   const quotation = booking?.booking_id ? getBookingQuotation(booking.booking_id) : null;
   const paymentData = booking?.booking_id ? getBookingPayment(booking.booking_id) : null;
+  const storedWarranty = booking?.booking_id ? getBookingWarranty(booking.booking_id) : null;
 
   // Review Form State
   const [rating, setRating] = useState(5);
@@ -188,14 +192,25 @@ function MyBookings() {
 
     try {
       const finalAmount = calculateFinalPayableAmount();
+      const paidAt = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
+
       const pData = {
         booking_id: booking.booking_id,
         amount: finalAmount,
         status: "PAID",
-        payment_method: "COOPERATIVE_INSTANT_SETTLEMENT",
-        paid_at: new Date().toISOString(),
+        payment_method: selectedPaymentMethod,
+        paid_at: paidAt,
       };
       saveBookingPayment(booking.booking_id, pData);
+
+      const wData = {
+        started_at: paidAt,
+        expires_at: expiresAt,
+        active: true,
+      };
+      saveBookingWarranty(booking.booking_id, wData);
+
       setQuoteVersion((v) => v + 1);
 
       // Trigger backend completion if not already marked
@@ -205,12 +220,13 @@ function MyBookings() {
         // Backend may already be marked via OTP
       }
 
-      const freshBooking = await getBooking(booking.booking_id);
-      setBooking({
-        ...freshBooking,
+      setBooking((prev) => ({
+        ...prev,
         payment_status: "PAID",
         status: "COMPLETED",
-      });
+        warranty_started_at: paidAt,
+        warranty_expires_at: expiresAt,
+      }));
 
       setPaymentSuccessToast(`✓ Payment of ₹${finalAmount} settled! 100% labour floor disbursed to ${booking.worker_name || 'Worker'} & 72-Hour Warranty Activated.`);
     } catch (err) {
@@ -512,6 +528,35 @@ function MyBookings() {
                   </div>
                 </div>
 
+                {/* Selectable Payment Method Pills */}
+                <div style={{ marginBottom: "16px" }}>
+                  <small style={{ fontWeight: 700, color: "#64748b", display: "block", marginBottom: "8px" }}>
+                    Select Payment Method:
+                  </small>
+                  <div style={{ display: "flex", gap: "8px", maxWidth: "420px" }}>
+                    {["UPI", "Card", "Net Banking"].map((method) => (
+                      <button
+                        key={method}
+                        type="button"
+                        onClick={() => setSelectedPaymentMethod(method)}
+                        style={{
+                          flex: 1,
+                          padding: "8px 12px",
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          borderRadius: "8px",
+                          border: selectedPaymentMethod === method ? "2px solid #059669" : "1px solid #cbd5e1",
+                          background: selectedPaymentMethod === method ? "#ecfdf5" : "#ffffff",
+                          color: selectedPaymentMethod === method ? "#059669" : "#475569",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {method === "UPI" ? "📱 UPI" : method === "Card" ? "💳 Card" : "🏦 Net Banking"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div style={{ textAlign: "right" }}>
                   <button
                     type="button"
@@ -520,18 +565,21 @@ function MyBookings() {
                     onClick={handleSimulatePayment}
                     disabled={payingDemo}
                   >
-                    {payingDemo ? "Processing Settlement..." : `⚡ Demo Pay (Simulate Successful Payment of ₹${calculateFinalPayableAmount()})`}
+                    {payingDemo ? "Processing Settlement..." : `✓ Demo Pay (₹${calculateFinalPayableAmount()})`}
                   </button>
+                  <p style={{ fontSize: "12px", color: "#64748b", marginTop: "6px" }}>
+                    Demo payment — no real money is charged.
+                  </p>
                 </div>
               </div>
             )}
 
-            {/* 3. 🛡️ 3-DAY WORKMANSHIP GUARANTEE (DYNAMIC COUNTDOWN DRIVEN BY BACKEND) */}
+            {/* 3. 🛡️ 72-HOUR WORKMANSHIP GUARANTEE */}
             {booking.status !== "CANCELLED" && (
               <WarrantyCountdown
-                warrantyExpiresAt={booking.warranty_expires_at}
-                warrantyStartedAt={booking.warranty_started_at}
-                status={booking.status}
+                warrantyExpiresAt={storedWarranty?.expires_at || booking.warranty_expires_at}
+                warrantyStartedAt={storedWarranty?.started_at || booking.warranty_started_at}
+                status={booking.payment_status === "PAID" || paymentData?.status === "PAID" ? "COMPLETED" : "PENDING"}
               />
             )}
 

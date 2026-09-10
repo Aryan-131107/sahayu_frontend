@@ -289,16 +289,151 @@ export const setStoredVerification = (workerId, data) => {
 };
 
 // Quotation Management (On-Site Inspection & Additional Work)
+export const TRADE_RATE_CARDS = {
+  Painting: {
+    skill: "Cooperative Painter / Surface Specialist",
+    items: [
+      { id: "pnt_putty", name: "Wall Putty & Surface Leveling (per 100 sq ft)", price: 350, category: "Painting" },
+      { id: "pnt_primer", name: "Waterproof Primer Undercoat (per room)", price: 280, category: "Painting" },
+      { id: "pnt_emulsion", name: "Premium Acrylic Emulsion (2-Coat Application)", price: 450, category: "Painting" },
+      { id: "pnt_damp", name: "Ceiling Damp & Stain Barrier Treatment", price: 320, category: "Painting" },
+      { id: "pnt_prep", name: "Masking Tape & Edge Precision Prep", price: 150, category: "Painting" },
+    ],
+  },
+  Electrical: {
+    skill: "Cooperative Electrician / Wireman",
+    items: [
+      { id: "elec_cap", name: "Ceiling Fan Heavy Capacitor Replacement", price: 150, category: "Electrical" },
+      { id: "elec_motor", name: "Fan Motor Rewinding & Coil Repair", price: 350, category: "Electrical" },
+      { id: "elec_switch", name: "Modular Switch & 16A Socket Replacement", price: 120, category: "Electrical" },
+      { id: "elec_mcb", name: "Main Panel Heavy MCB Breaker Replacement", price: 280, category: "Electrical" },
+      { id: "elec_wire", name: "Conduit Wire Routing & Patching (per 5m)", price: 140, category: "Electrical" },
+    ],
+  },
+  Plumbing: {
+    skill: "Cooperative Plumber / Pipe Fitter",
+    items: [
+      { id: "plm_joint", name: "Copper / CPVC Pipe Joint Seal & Weld", price: 180, category: "Plumbing" },
+      { id: "plm_valve", name: "Heavy Brass Gate Valve Replacement", price: 220, category: "Plumbing" },
+      { id: "plm_drain", name: "Chemical Drain Declogging & Trap Cleaning", price: 160, category: "Plumbing" },
+      { id: "plm_tap", name: "Ceramic Tap Spindle & Cartridge Replacement", price: 140, category: "Plumbing" },
+      { id: "plm_tank", name: "Overhead Water Tank Float Ball Valve Repair", price: 260, category: "Plumbing" },
+    ],
+  },
+  Carpentry: {
+    skill: "Cooperative Carpenter / Woodworker",
+    items: [
+      { id: "crp_hinge", name: "Concealed Hydraulic Hinge Replacement (Pair)", price: 190, category: "Carpentry" },
+      { id: "crp_lock", name: "Door Lock Cylinder & Latch Mechanism Repair", price: 250, category: "Carpentry" },
+      { id: "crp_drawer", name: "Drawer Telescopic Channel Fitting (Set)", price: 220, category: "Carpentry" },
+      { id: "crp_plane", name: "Wood Planing & Edge Trimming", price: 160, category: "Carpentry" },
+      { id: "crp_bracket", name: "Wooden Cabinet Corner Reinforcement", price: 130, category: "Carpentry" },
+    ],
+  },
+  Appliance: {
+    skill: "Appliance & AC Technician",
+    items: [
+      { id: "app_gas", name: "Refrigerant Gas Top-Up & Pressure Check", price: 450, category: "Appliance" },
+      { id: "app_cap", name: "Heavy Compressor Starting Capacitor (50uF)", price: 320, category: "Appliance" },
+      { id: "app_jet", name: "Drain Pipe Flush & Blower Jet Cleaning", price: 200, category: "Appliance" },
+      { id: "app_thermo", name: "Thermostat Sensor Replacement", price: 240, category: "Appliance" },
+      { id: "app_mount", name: "Anti-Vibration Rubber Mount Kit", price: 150, category: "Appliance" },
+    ],
+  },
+  Cleaning: {
+    skill: "Sanitation & Deep Cleaning Specialist",
+    items: [
+      { id: "cln_floor", name: "Deep Floor Scrubbing & Stain Extraction (per room)", price: 250, category: "Cleaning" },
+      { id: "cln_bath", name: "Sanitary Ware Acid-Free Descaling & Polish", price: 180, category: "Cleaning" },
+      { id: "cln_chimney", name: "Kitchen Chimney & Degreasing Treatment", price: 350, category: "Cleaning" },
+      { id: "cln_balcony", name: "Balcony High-Pressure Wash", price: 160, category: "Cleaning" },
+    ],
+  },
+  Masonry: {
+    skill: "Mason & Tile Specialist",
+    items: [
+      { id: "msn_grout", name: "Tile Grouting & Waterproof Sealing (per 50 sq ft)", price: 220, category: "Masonry" },
+      { id: "msn_crack", name: "Wall Crack V-Groove Repair & Plastering", price: 280, category: "Masonry" },
+      { id: "msn_anchor", name: "Door Frame Anchor Fastener Re-setting", price: 190, category: "Masonry" },
+    ],
+  },
+};
+
 export const RATE_CARD_ITEMS = [
-  { id: "cap_rep", name: "Capacitor Replacement", price: 150, category: "Electrical" },
-  { id: "mot_rew", name: "Motor Rewinding / Coil Repair", price: 350, category: "Electrical" },
-  { id: "sw_soc", name: "Modular Switch & Socket Replacement", price: 120, category: "Electrical" },
-  { id: "mcb_rep", name: "Heavy Duty MCB Breaker Replacement", price: 280, category: "Electrical" },
-  { id: "pipe_seal", name: "Copper / PVC Pipe Joint Seal", price: 180, category: "Plumbing" },
-  { id: "valv_rep", name: "Brass Gate Valve Replacement", price: 220, category: "Plumbing" },
-  { id: "drn_clog", name: "Chemical Drain Declogging & Trap Cleaning", price: 160, category: "Plumbing" },
-  { id: "wire_patch", name: "Conduit Wire Routing & Patching (per 5m)", price: 140, category: "Electrical" },
+  ...TRADE_RATE_CARDS.Electrical.items,
+  ...TRADE_RATE_CARDS.Plumbing.items,
+  ...TRADE_RATE_CARDS.Painting.items,
 ];
+
+export function getRateCardForBooking(booking) {
+  if (!booking) {
+    return {
+      category: "Electrical",
+      tradeTitle: "Electrical Service",
+      skillName: TRADE_RATE_CARDS.Electrical.skill,
+      items: TRADE_RATE_CARDS.Electrical.items,
+    };
+  }
+
+  const text = `${booking.service_name || ""} ${booking.service || ""} ${booking.category || ""} ${booking.skill_name || ""}`.toLowerCase();
+
+  if (text.includes("paint") || text.includes("putty") || text.includes("wall")) {
+    return {
+      category: "Painting",
+      tradeTitle: "Painting & Wall Surface Treatment",
+      skillName: TRADE_RATE_CARDS.Painting.skill,
+      items: TRADE_RATE_CARDS.Painting.items,
+    };
+  }
+  if (text.includes("plumb") || text.includes("leak") || text.includes("pipe") || text.includes("tap") || text.includes("drain") || text.includes("tank")) {
+    return {
+      category: "Plumbing",
+      tradeTitle: "Plumbing & Water Systems",
+      skillName: TRADE_RATE_CARDS.Plumbing.skill,
+      items: TRADE_RATE_CARDS.Plumbing.items,
+    };
+  }
+  if (text.includes("carpent") || text.includes("wood") || text.includes("furn") || text.includes("door") || text.includes("lock") || text.includes("hinge")) {
+    return {
+      category: "Carpentry",
+      tradeTitle: "Carpentry & Furniture Fitting",
+      skillName: TRADE_RATE_CARDS.Carpentry.skill,
+      items: TRADE_RATE_CARDS.Carpentry.items,
+    };
+  }
+  if (text.includes("ac") || text.includes("cool") || text.includes("appliance") || text.includes("refriger") || text.includes("wash") || text.includes("micro")) {
+    return {
+      category: "Appliance",
+      tradeTitle: "Appliance & Cooling Systems",
+      skillName: TRADE_RATE_CARDS.Appliance.skill,
+      items: TRADE_RATE_CARDS.Appliance.items,
+    };
+  }
+  if (text.includes("clean") || text.includes("sanit") || text.includes("pest") || text.includes("deep clean")) {
+    return {
+      category: "Cleaning",
+      tradeTitle: "Sanitation & Deep Cleaning",
+      skillName: TRADE_RATE_CARDS.Cleaning.skill,
+      items: TRADE_RATE_CARDS.Cleaning.items,
+    };
+  }
+  if (text.includes("mason") || text.includes("tile") || text.includes("civil") || text.includes("brick")) {
+    return {
+      category: "Masonry",
+      tradeTitle: "Masonry & Civil Works",
+      skillName: TRADE_RATE_CARDS.Masonry.skill,
+      items: TRADE_RATE_CARDS.Masonry.items,
+    };
+  }
+
+  // Default to Electrical
+  return {
+    category: "Electrical",
+    tradeTitle: "Electrical Trade & Fixtures",
+    skillName: TRADE_RATE_CARDS.Electrical.skill,
+    items: TRADE_RATE_CARDS.Electrical.items,
+  };
+}
 
 export const getBookingQuotation = (bookingId) => {
   try {
@@ -330,6 +465,34 @@ export const getBookingPayment = (bookingId) => {
 export const saveBookingPayment = (bookingId, paymentData) => {
   try {
     localStorage.setItem(`sahayu_payment_${bookingId}`, JSON.stringify(paymentData));
+  } catch {
+    // Ignore localStorage errors
+  }
+};
+
+// 72-Hour Workmanship Guarantee State Management
+export const getBookingWarranty = (bookingId) => {
+  try {
+    const raw = localStorage.getItem(`sahayu_warranty_${bookingId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveBookingWarranty = (bookingId, warrantyData) => {
+  try {
+    localStorage.setItem(`sahayu_warranty_${bookingId}`, JSON.stringify(warrantyData));
+  } catch {
+    // Ignore localStorage errors
+  }
+};
+
+export const clearDemoBookingState = (bookingId) => {
+  try {
+    localStorage.removeItem(`sahayu_quotation_${bookingId}`);
+    localStorage.removeItem(`sahayu_payment_${bookingId}`);
+    localStorage.removeItem(`sahayu_warranty_${bookingId}`);
   } catch {
     // Ignore localStorage errors
   }

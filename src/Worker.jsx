@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   getWorker,
@@ -10,7 +10,7 @@ import {
   verifyStartOtp,
   verifyEndOtp,
   getStoredVerification,
-  RATE_CARD_ITEMS,
+  getRateCardForBooking,
   getBookingQuotation,
   saveBookingQuotation,
 } from "./api";
@@ -47,6 +47,7 @@ function Worker() {
   const [quoteSuccessMsg, setQuoteSuccessMsg] = useState("");
 
   const quotation = activeJob?.booking_id ? getBookingQuotation(activeJob.booking_id) : null;
+  const currentRateCard = useMemo(() => getRateCardForBooking(activeJob), [activeJob]);
 
   // OTP inputs for starting and ending service
   const [enteredStartOtp, setEnteredStartOtp] = useState("");
@@ -733,11 +734,18 @@ function Worker() {
                       {/* Interactive Rate Card Quotation Builder */}
                       {showQuoteBuilder && (
                         <div className="rate-card-builder-box">
-                          <h5 style={{ margin: "0 0 8px", fontSize: "14px", color: "#0f172a" }}>
-                            Select Cooperative-Approved Rate Card Items:
-                          </h5>
+                          <div style={{ marginBottom: "12px" }}>
+                            <span className="quote-badge">RATE CARD: COOPERATIVE APPROVED RATES</span>
+                            <h5 style={{ margin: "4px 0 2px", fontSize: "14px", color: "#0f172a" }}>
+                              Current Service: {activeJob.service_name || currentRateCard.tradeTitle}
+                            </h5>
+                            <small style={{ color: "#64748b" }}>
+                              Required Trade Skill: <strong>{currentRateCard.skillName}</strong>
+                            </small>
+                          </div>
+
                           <div className="rate-items-grid">
-                            {RATE_CARD_ITEMS.map((item) => {
+                            {currentRateCard.items.map((item) => {
                               const selected = selectedItems.find((i) => i.id === item.id);
                               return (
                                 <div
@@ -772,6 +780,14 @@ function Worker() {
                                         onClick={() => handleUpdateItemQty(item.id, 1)}
                                       >
                                         +
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="text-btn"
+                                        style={{ color: "#ef4444", fontSize: "11px", marginLeft: "auto" }}
+                                        onClick={() => handleToggleItemInQuote(item)}
+                                      >
+                                        ✕ Remove
                                       </button>
                                     </div>
                                   )}

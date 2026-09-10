@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   getBooking,
@@ -8,11 +8,14 @@ import {
   verifyStartOtp,
   verifyEndOtp,
   getWorkers,
-  RATE_CARD_ITEMS,
+  getRateCardForBooking,
   getBookingQuotation,
   saveBookingQuotation,
   getBookingPayment,
   saveBookingPayment,
+  getBookingWarranty,
+  saveBookingWarranty,
+  clearDemoBookingState,
   completeBooking,
 } from "./api";
 import ServiceTimeline from "./ServiceTimeline";
@@ -20,10 +23,9 @@ import WarrantyCountdown from "./WarrantyCountdown";
 import "./App.css";
 
 /**
- * Dual-Persona Presentation Mode (Live Consensus Demo)
+ * Real-Time Demo (Judge-Ready Presentation)
  * LEFT: Customer Device (Sahāyu App)
  * RIGHT: Technician Terminal (Worker Portal)
- * Authoritatively driven by FastAPI backend with real-time polling synchronization.
  */
 export default function PresentationMode() {
   const navigate = useNavigate();
@@ -37,8 +39,6 @@ export default function PresentationMode() {
   const [loading, setLoading] = useState(true);
   const [creatingDemo, setCreatingDemo] = useState(false);
   const [error, setError] = useState("");
-  const [pollActive, setPollActive] = useState(true);
-  const [lastSyncTime, setLastSyncTime] = useState(new Date());
 
   // Worker OTP Action States
   const [enteredStartOtp, setEnteredStartOtp] = useState("");
@@ -47,18 +47,18 @@ export default function PresentationMode() {
   const [verifyingEnd, setVerifyingEnd] = useState(false);
   const [acceptingJob, setAcceptingJob] = useState(false);
 
-  // Quotation & Payment State
+  // Quotation & Rate Card State
   const [, setQuoteVersion] = useState(0);
-  const [showQuoteBuilder, setShowQuoteBuilder] = useState(false);
   const [selectedQuoteItems, setSelectedQuoteItems] = useState([]);
+
+  // Payment & Settlement State
+  const [isPaymentPending, setIsPaymentPending] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("UPI");
   const [payingDemo, setPayingDemo] = useState(false);
+  const [paymentSuccessData, setPaymentSuccessData] = useState(null);
 
-  const quotation = bookingId ? getBookingQuotation(bookingId) : null;
-  const paymentData = bookingId ? getBookingPayment(bookingId) : null;
-
-  // Success Consensus State
-  const [startSuccessData, setStartSuccessData] = useState(null);
-  const [endSuccessData, setEndSuccessData] = useState(null);
+  // Demo Reset Modal State
+  const [showResetModal, setShowResetModal] = useState(false);
 
   // OTP Error & Shake states
   const [otpError, setOtpError] = useState("");
@@ -67,6 +67,15 @@ export default function PresentationMode() {
 
   // Polling ref to prevent concurrent fetches
   const isFetchingRef = useRef(false);
+
+  const quotation = bookingId ? getBookingQuotation(bookingId) : null;
+  const paymentData = bookingId ? getBookingPayment(bookingId) : null;
+  const storedWarranty = bookingId ? getBookingWarranty(bookingId) : null;
+
+  // Rate Card dynamically scoped to booking service/trade
+  const currentRateCard = useMemo(() => {
+    return getRateCardForBooking(booking);
+  }, [booking]);
 
   // Fetch Booking authoritative state
   const fetchAuthoritativeBooking = useCallback(
@@ -79,13 +88,10 @@ export default function PresentationMode() {
         const data = await getBooking(id);
         setBooking(data);
         setError("");
-        setLastSyncTime(new Date());
-
-        // Update search params without pushing history
         setSearchParams({ booking_id: String(id) }, { replace: true });
       } catch (err) {
         if (!isBackground) {
-          setError(err.message || `Booking #${id} not found on backend.`);
+          setError(err.message || `Booking #${id} not found.`);
         }
       } finally {
         if (!isBackground) setLoading(false);
@@ -121,13 +127,12 @@ export default function PresentationMode() {
         if (data) {
           setBooking(data);
           setError("");
-          setLastSyncTime(new Date());
         }
         setLoading(false);
       })
       .catch((err) => {
         if (!isMounted) return;
-        setError(err.message || `Booking #${bookingId} not found on backend.`);
+        setError(err.message || `Booking #${bookingId} not found.`);
         setLoading(false);
       });
 
@@ -136,24 +141,25 @@ export default function PresentationMode() {
     };
   }, [bookingId]);
 
-  // Real-time Polling: Polls every 2.5s for synchronized dual-persona views
+  // Real-time synchronization
   useEffect(() => {
-    if (!pollActive || !bookingId) return;
+    if (!bookingId) return;
 
     const interval = setInterval(() => {
       fetchAuthoritativeBooking(bookingId, true);
     }, 2500);
 
     return () => clearInterval(interval);
-  }, [pollActive, bookingId, fetchAuthoritativeBooking]);
+  }, [bookingId, fetchAuthoritativeBooking]);
 
-  // Create a Fresh 1-Click Test Booking for Live Demonstration
+  // Create a Fresh New Demo Booking
   const handleCreateDemoBooking = async () => {
     setCreatingDemo(true);
     setError("");
     setOtpError("");
-    setStartSuccessData(null);
-    setEndSuccessData(null);
+    setIsPaymentPending(false);
+    setPaymentSuccessData(null);
+    setSelectedQuoteItems([]);
 
     try {
       const workers = await getWorkers(false).catch(() => []);
@@ -169,6 +175,7 @@ export default function PresentationMode() {
       });
 
       if (newBooking && newBooking.booking_id) {
+        clearDemoBookingState(newBooking.booking_id);
         setBookingId(String(newBooking.booking_id));
         setBooking(newBooking);
         loadAvailableBookings();
@@ -180,6 +187,34 @@ export default function PresentationMode() {
     }
   };
 
+  // Reset Demo Journey
+  const handleConfirmResetDemo = async () => {
+    if (bookingId) {
+      clearDemoBookingState(bookingId);
+    }
+    setEnteredStartOtp("");
+    setEnteredEndOtp("");
+    setOtpError("");
+    setSelectedQuoteItems([]);
+    setIsPaymentPending(false);
+    setPaymentSuccessData(null);
+    setShowResetModal(false);
+    setQuoteVersion((v) => v + 1);
+
+    if (booking) {
+      setBooking((prev) => ({
+        ...prev,
+        status: "ACCEPTED",
+        payment_status: "PENDING",
+        start_otp_verified_at: null,
+        end_otp_verified_at: null,
+        warranty_started_at: null,
+        warranty_expires_at: null,
+      }));
+    }
+    await fetchAuthoritativeBooking(bookingId, true);
+  };
+
   // Technician accepts service request
   const handleAcceptJob = async () => {
     if (!booking) return;
@@ -189,7 +224,6 @@ export default function PresentationMode() {
 
     try {
       const updated = await acceptBooking(booking.booking_id);
-      // ONLY update after backend confirms
       setBooking(updated);
       await fetchAuthoritativeBooking(booking.booking_id, true);
     } catch (err) {
@@ -199,7 +233,7 @@ export default function PresentationMode() {
     }
   };
 
-  // Technician verifies Start OTP Handshake
+  // Technician verifies Start PIN
   const handleVerifyStartPin = async (e) => {
     if (e) e.preventDefault();
     if (!booking) return;
@@ -212,7 +246,7 @@ export default function PresentationMode() {
     }
 
     if (!/^\d{4}$/.test(trimmed)) {
-      setOtpError("Invalid format. Handshake PIN must be exactly 4 digits.");
+      setOtpError("Invalid format. Start PIN must be exactly 4 digits.");
       triggerShake("start");
       return;
     }
@@ -221,28 +255,19 @@ export default function PresentationMode() {
     setOtpError("");
 
     try {
-      const res = await verifyStartOtp({
+      await verifyStartOtp({
         booking_id: booking.booking_id,
         otp: trimmed,
       });
 
-      // Backend Success Confirmed!
-      setStartSuccessData({
-        txnId: res.transaction_id || `TXN-START-${String(booking.booking_id).padStart(6, "0")}`,
-        timestamp: res.verification_timestamp || new Date().toISOString(),
-        message: res.message || "Doorstep arrival verified. Work is now in progress.",
-      });
-
       setEnteredStartOtp("");
-      // Refetch authoritative booking state
       await fetchAuthoritativeBooking(booking.booking_id, true);
     } catch (err) {
-      // Backend Rejection (e.g. 400 Bad Request, Attempt X of 3 recorded)
-      const msg = err.message || "Invalid Handshake PIN.";
+      const msg = err.message || "Invalid Start PIN.";
       setOtpError(
-        msg.includes("Invalid Handshake PIN")
+        msg.includes("Invalid Start PIN")
           ? `✕ ${msg}`
-          : `✕ Invalid Handshake PIN: ${msg}`
+          : `✕ Invalid Start PIN: ${msg}`
       );
       triggerShake("start");
     } finally {
@@ -250,7 +275,7 @@ export default function PresentationMode() {
     }
   };
 
-  // Technician verifies End OTP Handshake & Settlement
+  // Technician verifies Completion PIN & transitions to PAYMENT_PENDING
   const handleVerifyEndPin = async (e) => {
     if (e) e.preventDefault();
     if (!booking) return;
@@ -263,7 +288,7 @@ export default function PresentationMode() {
     }
 
     if (!/^\d{4}$/.test(trimmed)) {
-      setOtpError("Invalid format. Handshake PIN must be exactly 4 digits.");
+      setOtpError("Invalid format. Completion PIN must be exactly 4 digits.");
       triggerShake("end");
       return;
     }
@@ -272,24 +297,15 @@ export default function PresentationMode() {
     setOtpError("");
 
     try {
-      const res = await verifyEndOtp({
+      await verifyEndOtp({
         booking_id: booking.booking_id,
         otp: trimmed,
       });
 
-      // Backend Success Confirmed!
-      setEndSuccessData({
-        txnId: res.transaction_id || `TXN-SAHAYU-${String(booking.booking_id).padStart(6, "0")}`,
-        timestamp: res.completion_timestamp || new Date().toISOString(),
-        message: res.message || "Job completed successfully. Payment settled, Gullak credited, and 72-hour warranty activated.",
-        settlement: res.settlement_summary,
-      });
-
       setEnteredEndOtp("");
-      // Refetch authoritative booking state
+      setIsPaymentPending(true);
       await fetchAuthoritativeBooking(booking.booking_id, true);
     } catch (err) {
-      // Backend Rejection
       const msg = err.message || "Invalid Completion PIN.";
       setOtpError(
         msg.includes("Invalid")
@@ -312,15 +328,20 @@ export default function PresentationMode() {
     }
   };
 
-  const handleToggleQuoteItem = (item) => {
+  // Rate Card item selection controls
+  const handleAddQuoteItem = (item) => {
     setSelectedQuoteItems((prev) => {
       const exists = prev.find((i) => i.id === item.id);
       if (exists) {
-        return prev.filter((i) => i.id !== item.id);
+        return prev.map((i) => (i.id === item.id ? { ...i, qty: i.qty + 1 } : i));
       } else {
         return [...prev, { ...item, qty: 1 }];
       }
     });
+  };
+
+  const handleRemoveQuoteItem = (itemId) => {
+    setSelectedQuoteItems((prev) => prev.filter((i) => i.id !== itemId));
   };
 
   const handleUpdateQuoteQty = (itemId, delta) => {
@@ -350,12 +371,12 @@ export default function PresentationMode() {
       items: selectedQuoteItems,
       additional_amount: extraTotal,
       total_with_base: 239 + extraTotal,
-      status: "PENDING_APPROVAL",
+      status: "QUOTE_PENDING",
+      trade_category: currentRateCard.category,
       created_at: new Date().toISOString(),
     };
     saveBookingQuotation(booking.booking_id, payload);
     setQuoteVersion((v) => v + 1);
-    setShowQuoteBuilder(false);
   };
 
   const handleCustomerApproveQuote = () => {
@@ -388,67 +409,98 @@ export default function PresentationMode() {
     return base;
   };
 
-  const handleCustomerSimulatePayment = async () => {
+  // Payment Execution (Demo Pay)
+  const handleCustomerExecutePayment = async () => {
     if (!booking) return;
     setPayingDemo(true);
+
     try {
       const finalAmount = calculatePayableTotal();
+      const paidAt = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
+
       const pData = {
         booking_id: booking.booking_id,
         amount: finalAmount,
         status: "PAID",
-        paid_at: new Date().toISOString(),
+        payment_method: selectedPaymentMethod,
+        paid_at: paidAt,
       };
       saveBookingPayment(booking.booking_id, pData);
+
+      const wData = {
+        started_at: paidAt,
+        expires_at: expiresAt,
+        active: true,
+      };
+      saveBookingWarranty(booking.booking_id, wData);
+
       setQuoteVersion((v) => v + 1);
+
       try {
         await completeBooking(booking.booking_id);
       } catch (err) {
-        console.debug("Auto-complete fallback:", err);
+        console.debug("Backend complete sync:", err);
       }
+
+      setBooking((prev) => ({
+        ...prev,
+        status: "COMPLETED",
+        payment_status: "PAID",
+        warranty_started_at: paidAt,
+        warranty_expires_at: expiresAt,
+      }));
+
+      setPaymentSuccessData({
+        amount: finalAmount,
+        paidAt: paidAt,
+      });
+
+      setIsPaymentPending(false);
       await fetchAuthoritativeBooking(booking.booking_id, true);
     } finally {
       setPayingDemo(false);
     }
   };
 
-  const normStatus = String(booking?.status || "PENDING").toUpperCase();
+  const isPaid = paymentData?.status === "PAID" || booking?.payment_status === "PAID";
+  const isEndVerified = Boolean(booking?.end_otp_verified_at || isPaymentPending);
+
+  let normStatus = "PENDING";
+  if (isPaid || booking?.status === "COMPLETED") {
+    normStatus = "COMPLETED";
+  } else if (isEndVerified) {
+    normStatus = "PAYMENT_PENDING";
+  } else if (booking?.status === "IN_PROGRESS") {
+    normStatus = "IN_PROGRESS";
+  } else if (booking?.status === "ACCEPTED") {
+    normStatus = "ACCEPTED";
+  }
+
   const startOtpCode = booking?.start_otp || "4821";
   const endOtpCode = booking?.end_otp || "9134";
 
-  // Format timestamp safely for consensus banner
-  const formatConsensusTime = (isoString) => {
-    if (!isoString) return new Date().toLocaleString("en-IN");
-    try {
-      const d = new Date(isoString);
-      return d.toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
-    } catch {
-      return isoString;
-    }
-  };
+  // Effective Warranty Expiry timestamp (persisted)
+  const effectiveWarrantyExpiresAt =
+    storedWarranty?.expires_at || booking?.warranty_expires_at || null;
+  const effectiveWarrantyStartedAt =
+    storedWarranty?.started_at || booking?.warranty_started_at || null;
 
   return (
     <div className="presentation-page">
-      {/* Top Navbar */}
+      {/* Top Header */}
       <header className="presentation-topbar">
         <div className="topbar-left">
           <div className="logo" onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
             <span className="logo-icon">S</span>
             Sahāyu
           </div>
-          <span className="presentation-badge">⚡ DUAL-PERSONA LIVE CONSENSUS DEMO</span>
+          <span className="presentation-badge">⚡ REAL-TIME DEMO</span>
         </div>
 
         <div className="topbar-center">
           <div className="booking-selector-wrap">
-            <label>Active Order Reference:</label>
+            <label>Active Order:</label>
             <select
               value={bookingId}
               onChange={(e) => setBookingId(e.target.value)}
@@ -456,83 +508,67 @@ export default function PresentationMode() {
             >
               {allBookings.map((b) => (
                 <option key={b.booking_id} value={b.booking_id}>
-                  #{b.booking_reference || `SH-00${b.booking_id}`} · {b.service_name || "Service"} ({b.status})
+                  #{b.booking_reference || `SH-00${b.booking_id}`} ▼ ({b.service_name || "Service"})
                 </option>
               ))}
               {!allBookings.some((b) => String(b.booking_id) === String(bookingId)) && (
                 <option value={bookingId}>
-                  #{booking?.booking_reference || `SH-00${bookingId}`} (Current)
+                  #{booking?.booking_reference || `SH-00${bookingId}`} ▼
                 </option>
               )}
             </select>
           </div>
+        </div>
+
+        <div className="topbar-right">
+          <button
+            className="secondary-btn mini-demo-btn"
+            style={{ color: "#f87171", borderColor: "#7f1d1d" }}
+            onClick={() => setShowResetModal(true)}
+          >
+            ↻ Reset Demo
+          </button>
 
           <button
             className="secondary-btn mini-demo-btn"
             onClick={handleCreateDemoBooking}
             disabled={creatingDemo}
           >
-            {creatingDemo ? "Creating..." : "+ 1-Click New Demo Booking"}
-          </button>
-        </div>
-
-        <div className="topbar-right">
-          <div className="sync-status-indicator">
-            <span className={`sync-dot ${pollActive ? "active" : "paused"}`}></span>
-            <small>
-              {pollActive ? "Backend Auto-Sync (2.5s)" : "Sync Paused"} · {lastSyncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </small>
-          </div>
-
-          <button
-            className="text-btn"
-            style={{ color: "#94a3b8", fontSize: "12px" }}
-            onClick={() => setPollActive(!pollActive)}
-          >
-            {pollActive ? "Pause" : "Resume"}
-          </button>
-
-          <button
-            className="secondary-btn"
-            onClick={() => fetchAuthoritativeBooking(bookingId)}
-          >
-            🔄 Sync Now
-          </button>
-
-          <button className="primary-btn" onClick={() => navigate("/")}>
-            Exit Demo
+            {creatingDemo ? "Creating..." : "+ New Demo Booking"}
           </button>
         </div>
       </header>
 
-      {/* Global State Banner */}
+      {/* Global Status Ribbon */}
       <div className="demo-state-ribbon">
         <div className="ribbon-item">
-          <span className="ribbon-lbl">BACKEND STATUS:</span>
-          <strong className={`status-pill ${normStatus.toLowerCase()}`}>
-            ● {normStatus === "ACCEPTED" ? "ARRIVED" : normStatus}
-          </strong>
-        </div>
-
-        <div className="ribbon-item">
-          <span className="ribbon-lbl">ORDER REF:</span>
+          <span className="ribbon-lbl">ORDER</span>
           <strong>#{booking?.booking_reference || `SH-00${bookingId}`}</strong>
         </div>
 
         <div className="ribbon-item">
-          <span className="ribbon-lbl">WAGE SETTLEMENT:</span>
-          <strong style={{ color: "#059669" }}>₹199.00 (100% Floor to Worker)</strong>
+          <span className="ribbon-lbl">STATUS:</span>
+          <strong className={`status-pill ${normStatus.toLowerCase()}`}>
+            ● {normStatus === "ACCEPTED" ? "ARRIVED" : normStatus === "IN_PROGRESS" ? "IN PROGRESS" : normStatus === "PAYMENT_PENDING" ? "PAYMENT PENDING" : normStatus}
+          </strong>
         </div>
 
         <div className="ribbon-item">
-          <span className="ribbon-lbl">GULLAK FUND:</span>
-          <strong style={{ color: "#d97706" }}>+₹10.00 Welfare Contribution</strong>
+          <span className="ribbon-lbl">WORKER PAYOUT:</span>
+          <strong style={{ color: "#059669" }}>
+            ₹{199 + (quotation && quotation.status === "APPROVED" ? quotation.additional_amount : 0)}
+          </strong>
         </div>
 
         <div className="ribbon-item">
-          <span className="ribbon-lbl">WARRANTY:</span>
-          <strong style={{ color: normStatus === "COMPLETED" ? "#0284c7" : "#64748b" }}>
-            {normStatus === "COMPLETED" ? "🛡️ Active 72-Hour Window" : "Pending Handshake"}
+          <span className="ribbon-lbl">GULLAK:</span>
+          <strong style={{ color: "#d97706" }}>₹10</strong>
+        </div>
+
+        <div className="ribbon-item">
+          <span className="ribbon-lbl">PROTECTION:</span>
+          <strong style={{ color: isPaid ? "#0284c7" : "#94a3b8" }}>
+            {isPaid ? "ACTIVE" : "PENDING"}
           </strong>
         </div>
       </div>
@@ -542,11 +578,11 @@ export default function PresentationMode() {
         {loading && !booking ? (
           <div className="admin-loading-state" style={{ minHeight: "400px" }}>
             <div className="loading-spinner"></div>
-            <p>Synchronizing booking state from backend...</p>
+            <p>Loading booking details...</p>
           </div>
         ) : error && !booking ? (
           <div className="admin-error-card" style={{ maxWidth: "600px", margin: "40px auto" }}>
-            <h3>Backend State Error</h3>
+            <h3>Booking Not Found</h3>
             <p>{error}</p>
             <button className="primary-btn" onClick={handleCreateDemoBooking}>
               Create New Demo Order →
@@ -555,7 +591,7 @@ export default function PresentationMode() {
         ) : (
           <div className="dual-device-grid">
             {/* =========================================================================
-                LEFT DEVICE: CUSTOMER SCREEN (Sahāyu Consumer App)
+                LEFT DEVICE: CUSTOMER SCREEN (Sahāyu App)
                 ========================================================================= */}
             <section className="device-frame customer-frame">
               <div className="device-header">
@@ -574,11 +610,11 @@ export default function PresentationMode() {
                         ORDER #{booking?.booking_reference || `SH-00${bookingId}`}
                       </small>
                       <h3 style={{ margin: "2px 0 0", fontSize: "17px", color: "#0f172a" }}>
-                        {booking?.service_name || "Trade Service"}
+                        {booking?.service_name || currentRateCard.tradeTitle}
                       </h3>
                     </div>
                     <span className={`status-pill ${normStatus.toLowerCase()}`}>
-                      ● {normStatus === "ACCEPTED" ? "ARRIVED" : normStatus}
+                      ● {normStatus === "ACCEPTED" ? "ARRIVED" : normStatus === "IN_PROGRESS" ? "IN PROGRESS" : normStatus === "PAYMENT_PENDING" ? "PAYMENT PENDING" : normStatus}
                     </span>
                   </div>
 
@@ -607,57 +643,131 @@ export default function PresentationMode() {
                   </div>
                 </div>
 
-                {/* ON-SITE INSPECTION & QUOTATION APPROVAL (CUSTOMER PERSPECTIVE) */}
+                {/* 10. CUSTOMER APPROVAL: Prominent Card when quotation is pending */}
                 {quotation && (
-                  <div className={`quotation-approval-card mini ${quotation.status === "PENDING_APPROVAL" ? "pending-review" : ""}`} style={{ marginBottom: "14px" }}>
+                  <div
+                    className={`quotation-approval-card mini ${
+                      quotation.status === "QUOTE_PENDING" || quotation.status === "PENDING_APPROVAL" ? "pending-review" : ""
+                    }`}
+                    style={{ marginBottom: "14px" }}
+                  >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span className="quote-badge">INSPECTION QUOTATION</span>
-                      <span className={`status-badge ${quotation.status === "APPROVED" ? "green" : quotation.status === "REJECTED" ? "red" : "yellow"}`}>
-                        {quotation.status === "APPROVED" ? "✓ APPROVED" : quotation.status === "REJECTED" ? "✕ DECLINED" : "🔔 ACTION REQUIRED"}
+                      <span className="quote-badge" style={{ background: "#fef3c7", color: "#b45309", fontWeight: 800 }}>
+                        🔔 ADDITIONAL WORK APPROVAL
+                      </span>
+                      <span
+                        className={`status-badge ${
+                          quotation.status === "APPROVED"
+                            ? "green"
+                            : quotation.status === "REJECTED"
+                            ? "red"
+                            : "yellow"
+                        }`}
+                      >
+                        {quotation.status === "APPROVED"
+                          ? "✓ APPROVED"
+                          : quotation.status === "REJECTED"
+                          ? "REJECTED"
+                          : "ACTION REQUIRED"}
                       </span>
                     </div>
-                    <p style={{ margin: "4px 0", fontSize: "12px", color: "#64748b" }}>
-                      Technician added: {quotation.items?.map(i => `${i.name} (x${i.qty})`).join(", ")}
+
+                    <p style={{ margin: "4px 0 8px", fontSize: "12px", color: "#475569" }}>
+                      Your technician has requested additional work.
                     </p>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontWeight: 700, margin: "6px 0" }}>
-                      <span>Additional Parts / Labour:</span>
-                      <strong style={{ color: "#059669" }}>+₹{quotation.additional_amount}</strong>
+
+                    <div style={{ marginTop: "6px" }}>
+                      <div className="quote-items-table">
+                        {quotation.items?.map((item, idx) => (
+                          <div key={idx} className="quote-item-row" style={{ fontSize: "12px" }}>
+                            <span>
+                              {item.name} × {item.qty}
+                            </span>
+                            <strong>+₹{item.price * item.qty}</strong>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div
+                        style={{
+                          borderTop: "1px dashed #cbd5e1",
+                          marginTop: "6px",
+                          paddingTop: "6px",
+                          fontSize: "12px",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#64748b" }}>
+                          <span>Additional Work:</span>
+                          <strong style={{ color: "#059669" }}>+₹{quotation.additional_amount}</strong>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#64748b" }}>
+                          <span>Current Booking Base:</span>
+                          <span>₹239</span>
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            fontSize: "13px",
+                            fontWeight: 800,
+                            color: "#0f172a",
+                            marginTop: "4px",
+                          }}
+                        >
+                          <span>Projected Final Amount:</span>
+                          <span style={{ color: "#059669" }}>
+                            ₹{quotation.status === "APPROVED" ? 239 + quotation.additional_amount : 239}
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    {quotation.status === "PENDING_APPROVAL" && (
-                      <div style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
-                        <button
-                          type="button"
-                          className="primary-btn"
-                          style={{ flex: 1, padding: "6px 10px", fontSize: "11px" }}
-                          onClick={handleCustomerApproveQuote}
-                        >
-                          ✓ Approve (+₹{quotation.additional_amount})
-                        </button>
+                    {(quotation.status === "QUOTE_PENDING" || quotation.status === "PENDING_APPROVAL") && (
+                      <div style={{ display: "flex", gap: "6px", marginTop: "10px" }}>
                         <button
                           type="button"
                           className="secondary-btn"
-                          style={{ flex: 1, padding: "6px 10px", fontSize: "11px" }}
+                          style={{ flex: 1, padding: "8px 10px", fontSize: "12px" }}
                           onClick={handleCustomerDeclineQuote}
                         >
-                          ✕ Decline (Base Only)
+                          Reject
                         </button>
+                        <button
+                          type="button"
+                          className="primary-btn"
+                          style={{ flex: 1, padding: "8px 10px", fontSize: "12px", background: "#059669", borderColor: "#059669" }}
+                          onClick={handleCustomerApproveQuote}
+                        >
+                          ✓ Approve
+                        </button>
+                      </div>
+                    )}
+
+                    {quotation.status === "APPROVED" && (
+                      <div style={{ marginTop: "8px", fontSize: "12px", color: "#059669", fontWeight: 700 }}>
+                        ✓ ADDITIONAL WORK APPROVED
+                      </div>
+                    )}
+
+                    {quotation.status === "REJECTED" && (
+                      <div style={{ marginTop: "8px", fontSize: "12px", color: "#b91c1c" }}>
+                        Additional work rejected. Original booking amount remains applicable.
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* OTP Display Cards (Customer Perspective) */}
+                {/* Handshake Security Codes Display */}
                 <div className="customer-handshake-box">
                   <div className="handshake-section-title">
                     <span>🔐 SECURITY HANDSHAKE CODES</span>
-                    <small>Provide codes to your professional at doorstep</small>
+                    <small>Share codes with technician at your doorstep</small>
                   </div>
 
                   {/* Step 1: Start PIN Card */}
                   <div
                     className={`customer-pin-card ${
-                      normStatus === "IN_PROGRESS" || normStatus === "COMPLETED"
+                      normStatus === "IN_PROGRESS" || normStatus === "PAYMENT_PENDING" || normStatus === "COMPLETED"
                         ? "verified-step"
                         : normStatus === "ACCEPTED"
                         ? "active-step"
@@ -666,8 +776,8 @@ export default function PresentationMode() {
                   >
                     <div className="pin-card-header">
                       <span className="pin-step-lbl">STEP 1 · DOORSTEP ARRIVAL</span>
-                      {normStatus === "IN_PROGRESS" || normStatus === "COMPLETED" ? (
-                        <span className="pin-verified-tag">✓ START VERIFIED</span>
+                      {normStatus === "IN_PROGRESS" || normStatus === "PAYMENT_PENDING" || normStatus === "COMPLETED" ? (
+                        <span className="pin-verified-tag">✓ START PIN VERIFIED</span>
                       ) : (
                         <span className="pin-pending-tag">SHARE AT DOORSTEP</span>
                       )}
@@ -676,16 +786,16 @@ export default function PresentationMode() {
                     <div className="pin-number-display">{startOtpCode}</div>
 
                     <p className="pin-instruction">
-                      {normStatus === "IN_PROGRESS" || normStatus === "COMPLETED"
-                        ? "✓ Verified via Backend Consensus. Doorstep arrival authenticated."
-                        : "Share this 4-digit PIN with technician when they arrive at your location."}
+                      {normStatus === "IN_PROGRESS" || normStatus === "PAYMENT_PENDING" || normStatus === "COMPLETED"
+                        ? "Doorstep arrival verified. Service in progress."
+                        : "Share this 4-digit PIN with technician when they arrive."}
                     </p>
                   </div>
 
                   {/* Step 2: Completion PIN Card */}
                   <div
                     className={`customer-pin-card ${
-                      normStatus === "COMPLETED"
+                      normStatus === "COMPLETED" || normStatus === "PAYMENT_PENDING"
                         ? "verified-step"
                         : normStatus === "IN_PROGRESS"
                         ? "active-step"
@@ -694,7 +804,7 @@ export default function PresentationMode() {
                   >
                     <div className="pin-card-header">
                       <span className="pin-step-lbl">STEP 2 · SERVICE COMPLETION</span>
-                      {normStatus === "COMPLETED" ? (
+                      {normStatus === "COMPLETED" || normStatus === "PAYMENT_PENDING" ? (
                         <span className="pin-verified-tag">✓ JOB COMPLETED</span>
                       ) : (
                         <span className="pin-pending-tag">PROTECTED PIN</span>
@@ -704,54 +814,148 @@ export default function PresentationMode() {
                     <div className="pin-number-display">{endOtpCode}</div>
 
                     <p className="pin-instruction">
-                      {normStatus === "COMPLETED"
-                        ? "✓ Verified via Backend Consensus. Work validated."
+                      {normStatus === "COMPLETED" || normStatus === "PAYMENT_PENDING"
+                        ? "Work completed and verified."
                         : "Share this PIN ONLY after the repair work has been fully inspected and completed."}
                     </p>
                   </div>
                 </div>
 
-                {/* POST-COMPLETION PAYMENT MODAL IN PRESENTATION MODE */}
-                {normStatus === "COMPLETED" && (paymentData?.status !== "PAID" && booking?.payment_status !== "PAID") && (
-                  <div className="payment-pending-card mini" style={{ margin: "14px 0" }}>
+                {/* 4. PAYMENT UI: Prominently displayed when status is PAYMENT_PENDING */}
+                {(normStatus === "PAYMENT_PENDING" || (normStatus === "COMPLETED" && !isPaid)) && (
+                  <div className="payment-pending-card mini" style={{ margin: "14px 0", border: "2px solid #059669" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <strong style={{ fontSize: "13px", color: "#0f172a" }}>💳 Final Payment Due</strong>
+                      <strong style={{ fontSize: "14px", color: "#0f172a" }}>PAYMENT REQUIRED</strong>
                       <span className="status-badge yellow mini">₹{calculatePayableTotal()}</span>
                     </div>
-                    <p style={{ fontSize: "11px", color: "#64748b", margin: "4px 0 8px" }}>
-                      Completion PIN verified. Settle total to disburse 100% floor & activate warranty.
-                    </p>
+
+                    <div style={{ margin: "10px 0", fontSize: "12px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", color: "#475569" }}>
+                        <span>Initial Inspection & Labour</span>
+                        <span>₹199</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", color: "#475569" }}>
+                        <span>Platform Operations</span>
+                        <span>₹30</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", color: "#475569" }}>
+                        <span>Gullak Welfare</span>
+                        <span>₹10</span>
+                      </div>
+                      {quotation && quotation.status === "APPROVED" && (
+                        <div style={{ display: "flex", justifyContent: "space-between", color: "#059669", fontWeight: 600 }}>
+                          <span>Additional Work / Parts</span>
+                          <span>+₹{quotation.additional_amount}</span>
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontWeight: 800,
+                          color: "#0f172a",
+                          borderTop: "1px solid #e2e8f0",
+                          paddingTop: "6px",
+                          marginTop: "6px",
+                          fontSize: "13px",
+                        }}
+                      >
+                        <span>Amount Payable</span>
+                        <strong style={{ color: "#059669" }}>₹{calculatePayableTotal()}</strong>
+                      </div>
+                    </div>
+
+                    {/* Selectable Payment Method Pills */}
+                    <div style={{ marginBottom: "12px" }}>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        {["UPI", "Card", "Net Banking"].map((method) => (
+                          <button
+                            key={method}
+                            type="button"
+                            onClick={() => setSelectedPaymentMethod(method)}
+                            style={{
+                              flex: 1,
+                              padding: "6px 8px",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              borderRadius: "6px",
+                              border: selectedPaymentMethod === method ? "2px solid #059669" : "1px solid #cbd5e1",
+                              background: selectedPaymentMethod === method ? "#ecfdf5" : "#ffffff",
+                              color: selectedPaymentMethod === method ? "#059669" : "#475569",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {method === "UPI" ? "📱 UPI" : method === "Card" ? "💳 Card" : "🏦 Net Banking"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <button
                       type="button"
                       className="primary-btn full-btn"
-                      style={{ background: "#059669", borderColor: "#059669", padding: "8px 12px", fontSize: "12px" }}
-                      onClick={handleCustomerSimulatePayment}
+                      style={{
+                        background: "#059669",
+                        borderColor: "#059669",
+                        padding: "10px 14px",
+                        fontSize: "13px",
+                        fontWeight: 800,
+                      }}
+                      onClick={handleCustomerExecutePayment}
                       disabled={payingDemo}
                     >
-                      {payingDemo ? "Processing..." : `⚡ Demo Pay (₹${calculatePayableTotal()})`}
+                      {payingDemo ? "Processing..." : `💳 Demo Pay ₹${calculatePayableTotal()}`}
                     </button>
+                    <p style={{ textAlign: "center", fontSize: "11px", color: "#64748b", margin: "6px 0 0" }}>
+                      Demo payment — no real money charged
+                    </p>
                   </div>
                 )}
 
-                {/* 3-Day Dynamic Warranty Countdown Component */}
+                {/* 5. PAYMENT SUCCESS UI */}
+                {isPaid && (
+                  <div
+                    style={{
+                      background: "#ecfdf5",
+                      border: "1.5px solid #10b981",
+                      borderRadius: "10px",
+                      padding: "12px 14px",
+                      margin: "14px 0",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "18px", color: "#059669" }}>✓</span>
+                      <strong style={{ color: "#065f46", fontSize: "14px" }}>PAYMENT SUCCESSFUL</strong>
+                    </div>
+                    <div style={{ marginTop: "4px", fontSize: "13px", fontWeight: 700, color: "#059669" }}>
+                      ₹{paymentSuccessData?.amount || calculatePayableTotal()} Paid
+                    </div>
+                    <ul style={{ margin: "6px 0 0", paddingLeft: "18px", fontSize: "12px", color: "#047857" }}>
+                      <li>Worker settlement recorded</li>
+                      <li>Gullak contribution recorded</li>
+                    </ul>
+                  </div>
+                )}
+
+                {/* 6. 3-Day Workmanship Protection Component */}
                 <div style={{ marginTop: "16px" }}>
                   <WarrantyCountdown
-                    warrantyExpiresAt={booking?.warranty_expires_at}
-                    warrantyStartedAt={booking?.warranty_started_at}
-                    status={normStatus}
+                    warrantyExpiresAt={effectiveWarrantyExpiresAt}
+                    warrantyStartedAt={effectiveWarrantyStartedAt}
+                    status={isPaid ? "COMPLETED" : "PENDING"}
                     compact={true}
                   />
                 </div>
 
-                {/* Live Progress Timeline */}
+                {/* Progress Timeline */}
                 <div style={{ marginTop: "16px" }}>
                   <ServiceTimeline
                     status={normStatus}
                     bookingDate={booking?.booking_date}
-                    amount={booking?.amount || 239}
+                    amount={calculatePayableTotal()}
                     startOtpVerifiedAt={booking?.start_otp_verified_at}
                     endOtpVerifiedAt={booking?.end_otp_verified_at}
-                    warrantyExpiresAt={booking?.warranty_expires_at}
+                    warrantyExpiresAt={effectiveWarrantyExpiresAt}
                     bookingReference={booking?.booking_reference}
                   />
                 </div>
@@ -759,7 +963,7 @@ export default function PresentationMode() {
             </section>
 
             {/* =========================================================================
-                RIGHT DEVICE: TECHNICIAN DEVICE (Worker Handshake Terminal)
+                RIGHT DEVICE: TECHNICIAN DEVICE (Worker Portal)
                 ========================================================================= */}
             <section className="device-frame technician-frame">
               <div className="device-header">
@@ -780,6 +984,9 @@ export default function PresentationMode() {
                       <h3 style={{ margin: "2px 0 0", fontSize: "16px", color: "#0f172a" }}>
                         {booking?.worker_name || "Arvind Gupta"} (Member #{100 + (booking?.worker_id || 11)})
                       </h3>
+                      <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#64748b" }}>
+                        Trade Skill: <strong>{currentRateCard.skillName}</strong>
+                      </p>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <span style={{ fontSize: "11px", color: "#64748b", display: "block" }}>
@@ -790,49 +997,22 @@ export default function PresentationMode() {
                   </div>
                 </div>
 
-                {/* Consensus Success Banner (Section 3 Requirement) */}
-                {startSuccessData && (
-                  <div className="consensus-success-banner">
-                    <div className="consensus-icon">✓</div>
-                    <div className="consensus-body">
-                      <strong>Verified via Backend Consensus</strong>
-                      <p>Txn #{startSuccessData.txnId} Committed</p>
-                      <small>{formatConsensusTime(startSuccessData.timestamp)}</small>
-                    </div>
-                  </div>
-                )}
-
-                {endSuccessData && (
-                  <div className="consensus-success-banner settlement-banner">
-                    <div className="consensus-icon">✓</div>
-                    <div className="consensus-body">
-                      <strong>Verified via Backend Consensus</strong>
-                      <p>Txn #{endSuccessData.txnId} Committed · 100% Payout Settled</p>
-                      <small>{formatConsensusTime(endSuccessData.timestamp)}</small>
-                    </div>
-                  </div>
-                )}
-
-                {/* Handshake Action Terminal */}
+                {/* Technician Actions & Verification */}
                 <div className="technician-terminal-box">
                   <div className="terminal-header">
-                    <span>⚡ HANDSHAKE ACTION CONSOLE</span>
-                    <small>Authoritative Backend Verification</small>
+                    <span>⚡ JOB ACTIONS & VERIFICATION</span>
+                    <small>Live Job Status</small>
                   </div>
 
-                  {/* ERROR DISPLAY WITH SHAKE (Section 4 Requirement) */}
-                  {otpError && (
-                    <div className="terminal-error-alert">
-                      {otpError}
-                    </div>
-                  )}
+                  {/* ERROR DISPLAY WITH SHAKE */}
+                  {otpError && <div className="terminal-error-alert">{otpError}</div>}
 
                   {/* STATE 1: PENDING -> Accept Booking */}
                   {normStatus === "PENDING" && (
                     <div className="terminal-step-box">
                       <h4>New Service Order Assigned</h4>
                       <p>
-                        Customer requested <strong>{booking?.service_name || "Trade Service"}</strong>. Accept to proceed with dispatch.
+                        Customer requested <strong>{booking?.service_name || currentRateCard.tradeTitle}</strong>. Accept to proceed with dispatch.
                       </p>
                       <button
                         type="button"
@@ -851,7 +1031,7 @@ export default function PresentationMode() {
                       <div className="terminal-step-title">
                         <span className="step-num">1</span>
                         <div>
-                          <h4>Step 1: Doorstep Handshake Verification</h4>
+                          <h4>Step 1: Doorstep Arrival Verification</h4>
                           <p>Ask customer for their 4-digit Start PIN (Code: {startOtpCode}) to confirm arrival.</p>
                         </div>
                       </div>
@@ -892,80 +1072,178 @@ export default function PresentationMode() {
                     </div>
                   )}
 
-                  {/* STATE 3: IN_PROGRESS -> On-Site Quotation Builder & Completion PIN */}
+                  {/* STATE 3: IN_PROGRESS -> Trade Rate Card Quotation Builder & Completion PIN */}
                   {normStatus === "IN_PROGRESS" && (
                     <div>
-                      {/* Interactive Rate Card Quotation Builder */}
+                      {/* 7 & 8. ON-SITE INSPECTION & ADDITIONAL WORK RATE CARD */}
                       <div className="terminal-step-box" style={{ marginBottom: "14px" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                          <h4 style={{ margin: 0, fontSize: "14px" }}>On-Site Inspection & Extra Parts</h4>
-                          {!quotation && !showQuoteBuilder && (
-                            <button
-                              type="button"
-                              className="secondary-btn mini-demo-btn"
-                              onClick={() => setShowQuoteBuilder(true)}
-                            >
-                              + Add Quote
-                            </button>
-                          )}
+                        <div style={{ marginBottom: "8px" }}>
+                          <span className="quote-badge">ON-SITE INSPECTION & ADDITIONAL WORK</span>
+                          <h4 style={{ margin: "4px 0 2px", fontSize: "14px", color: "#0f172a" }}>
+                            Service: {booking?.service_name || currentRateCard.tradeTitle}
+                          </h4>
+                          <p style={{ margin: "2px 0 8px", fontSize: "11px", color: "#64748b" }}>
+                            Skill: <strong>{currentRateCard.skillName}</strong>
+                          </p>
                         </div>
 
-                        {quotation && (
-                          <div className="active-quotation-summary mini" style={{ padding: "8px 10px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontWeight: 700 }}>
-                              <span>Quotation (+₹{quotation.additional_amount})</span>
-                              <span className={`status-badge mini ${quotation.status === "APPROVED" ? "green" : quotation.status === "REJECTED" ? "red" : "yellow"}`}>
-                                {quotation.status}
-                              </span>
-                            </div>
-                            <p style={{ margin: "4px 0 0", fontSize: "11px", color: "#64748b" }}>
-                              {quotation.items?.map(i => `${i.name} (x${i.qty})`).join(", ")}
-                            </p>
-                          </div>
-                        )}
+                        {/* Available Rate Card Items */}
+                        <div className="rate-card-builder-box mini" style={{ padding: "10px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                          <small style={{ fontWeight: 700, display: "block", marginBottom: "6px", color: "#334155" }}>
+                            Select Additional Work:
+                          </small>
 
-                        {showQuoteBuilder && (
-                          <div className="rate-card-builder-box mini" style={{ marginTop: "8px" }}>
-                            <small style={{ fontWeight: 700, display: "block", marginBottom: "6px" }}>Select Rate Card Items:</small>
-                            <div className="rate-items-grid" style={{ gridTemplateColumns: "1fr", gap: "6px" }}>
-                              {RATE_CARD_ITEMS.slice(0, 4).map((item) => {
+                          {currentRateCard.items.length === 0 ? (
+                            <p style={{ fontSize: "12px", color: "#64748b", margin: "4px 0" }}>
+                              No additional rate-card items available for this service.
+                            </p>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                              {currentRateCard.items.map((item) => {
                                 const selected = selectedQuoteItems.find((i) => i.id === item.id);
                                 return (
                                   <div
                                     key={item.id}
-                                    className={`rate-item-card mini ${selected ? "selected" : ""}`}
-                                    onClick={() => handleToggleQuoteItem(item)}
-                                    style={{ padding: "6px 8px", cursor: "pointer", border: "1px solid #cbd5e1", borderRadius: "6px", background: selected ? "#ecfdf5" : "#fff" }}
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      padding: "6px 10px",
+                                      borderRadius: "6px",
+                                      border: selected ? "1.5px solid #059669" : "1px solid #cbd5e1",
+                                      background: selected ? "#ecfdf5" : "#ffffff",
+                                    }}
                                   >
-                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
-                                      <span>{item.name}</span>
-                                      <strong>+₹{item.price}</strong>
+                                    <div style={{ flex: 1, marginRight: "8px" }}>
+                                      <div style={{ fontSize: "12px", fontWeight: 600, color: "#0f172a" }}>{item.name}</div>
+                                      <strong style={{ fontSize: "11px", color: "#059669" }}>+₹{item.price}</strong>
                                     </div>
-                                    {selected && (
-                                      <div className="qty-selector mini" onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "4px" }}>
-                                        <small>Qty:</small>
-                                        <button type="button" className="qty-btn" onClick={() => handleUpdateQuoteQty(item.id, -1)}>-</button>
-                                        <span style={{ fontSize: "12px" }}>{selected.qty}</span>
-                                        <button type="button" className="qty-btn" onClick={() => handleUpdateQuoteQty(item.id, 1)}>+</button>
-                                      </div>
-                                    )}
+
+                                    <button
+                                      type="button"
+                                      className="secondary-btn mini-demo-btn"
+                                      style={{ padding: "4px 8px", fontSize: "11px" }}
+                                      onClick={() => handleAddQuoteItem(item)}
+                                    >
+                                      + Add
+                                    </button>
                                   </div>
                                 );
                               })}
                             </div>
+                          )}
 
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px" }}>
-                              <strong style={{ fontSize: "12px", color: "#059669" }}>Subtotal: +₹{calculateQuoteAdditional()}</strong>
-                              <div style={{ display: "flex", gap: "6px" }}>
-                                <button type="button" className="secondary-btn mini-demo-btn" onClick={() => setShowQuoteBuilder(false)}>Cancel</button>
-                                <button type="button" className="primary-btn mini-demo-btn" onClick={handleSubmitQuote} disabled={selectedQuoteItems.length === 0}>Submit</button>
+                          {/* 9. SELECTED ADDITIONAL WORK TABLE WITH REMOVE CONTROLS */}
+                          {selectedQuoteItems.length > 0 && (
+                            <div style={{ marginTop: "12px", borderTop: "1px solid #cbd5e1", paddingTop: "8px" }}>
+                              <small style={{ fontWeight: 700, color: "#0f172a", display: "block", marginBottom: "4px" }}>
+                                Selected Additional Work:
+                              </small>
+                              <table style={{ width: "100%", fontSize: "11px", borderCollapse: "collapse" }}>
+                                <thead>
+                                  <tr style={{ color: "#64748b", borderBottom: "1px solid #e2e8f0", textAlign: "left" }}>
+                                    <th style={{ padding: "4px 2px" }}>Item</th>
+                                    <th style={{ padding: "4px 2px" }}>Price</th>
+                                    <th style={{ padding: "4px 2px", textAlign: "center" }}>Qty</th>
+                                    <th style={{ padding: "4px 2px", textAlign: "right" }}>Total</th>
+                                    <th style={{ padding: "4px 2px", textAlign: "center" }}>Remove</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {selectedQuoteItems.map((item) => (
+                                    <tr key={item.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                      <td style={{ padding: "4px 2px", fontWeight: 600 }}>{item.name}</td>
+                                      <td style={{ padding: "4px 2px" }}>₹{item.price}</td>
+                                      <td style={{ padding: "4px 2px", textAlign: "center" }}>
+                                        <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                          <button
+                                            type="button"
+                                            className="qty-btn"
+                                            onClick={() => handleUpdateQuoteQty(item.id, -1)}
+                                          >
+                                            -
+                                          </button>
+                                          <span>{item.qty}</span>
+                                          <button
+                                            type="button"
+                                            className="qty-btn"
+                                            onClick={() => handleUpdateQuoteQty(item.id, 1)}
+                                          >
+                                            +
+                                          </button>
+                                        </div>
+                                      </td>
+                                      <td style={{ padding: "4px 2px", textAlign: "right", fontWeight: 700, color: "#059669" }}>
+                                        ₹{item.price * item.qty}
+                                      </td>
+                                      <td style={{ padding: "4px 2px", textAlign: "center" }}>
+                                        <button
+                                          type="button"
+                                          className="text-btn"
+                                          style={{ color: "#ef4444", fontSize: "11px" }}
+                                          onClick={() => handleRemoveQuoteItem(item.id)}
+                                        >
+                                          [Remove]
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px", fontSize: "12px" }}>
+                                <div>
+                                  <span style={{ color: "#64748b" }}>Additional Total: </span>
+                                  <strong style={{ color: "#059669" }}>₹{calculateQuoteAdditional()}</strong>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="primary-btn mini-demo-btn"
+                                  style={{ background: "#0284c7", borderColor: "#0284c7" }}
+                                  onClick={handleSubmitQuote}
+                                >
+                                  Send for Customer Approval
+                                </button>
                               </div>
                             </div>
-                          </div>
-                        )}
+                          )}
+
+                          {/* 11. APPROVAL STATES */}
+                          {quotation && (
+                            <div
+                              style={{
+                                marginTop: "10px",
+                                padding: "8px",
+                                borderRadius: "6px",
+                                background:
+                                  quotation.status === "APPROVED"
+                                    ? "#ecfdf5"
+                                    : quotation.status === "REJECTED"
+                                    ? "#fef2f2"
+                                    : "#fffbeb",
+                                border:
+                                  quotation.status === "APPROVED"
+                                    ? "1px solid #10b981"
+                                    : quotation.status === "REJECTED"
+                                    ? "1px solid #f87171"
+                                    : "1px solid #f59e0b",
+                              }}
+                            >
+                              <div style={{ fontSize: "12px" }}>
+                                <strong>
+                                  {quotation.status === "APPROVED"
+                                    ? `✓ ADDITIONAL WORK APPROVED (+₹${quotation.additional_amount})`
+                                    : quotation.status === "REJECTED"
+                                    ? "Additional work rejected. Original booking amount remains applicable."
+                                    : "⏳ Quotation Pending Customer Approval"}
+                                </strong>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Completion PIN Action Box */}
+                      {/* Step 2: Completion PIN Handshake Form */}
                       <div className="terminal-step-box active-work">
                         <div className="terminal-step-title">
                           <span className="step-num">2</span>
@@ -1012,7 +1290,17 @@ export default function PresentationMode() {
                     </div>
                   )}
 
-                  {/* STATE 4: COMPLETED -> Wage Settlement Summary */}
+                  {/* STATE 4: PAYMENT_PENDING -> Awaiting Customer Settlement */}
+                  {normStatus === "PAYMENT_PENDING" && (
+                    <div className="terminal-step-box" style={{ background: "#fffbeb", borderColor: "#f59e0b" }}>
+                      <h4 style={{ margin: 0, color: "#b45309" }}>Job Completed — Payment Pending</h4>
+                      <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#92400e" }}>
+                        Completion PIN verified. Waiting for customer to complete payment of ₹{calculatePayableTotal()} on their screen.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* STATE 5: COMPLETED -> Transparent Settlement */}
                   {normStatus === "COMPLETED" && (
                     <div className="terminal-step-box completed-terminal">
                       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
@@ -1020,12 +1308,12 @@ export default function PresentationMode() {
                         <div>
                           <h4 style={{ margin: 0, color: "#065f46" }}>Service Completed & Settled</h4>
                           <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#047857" }}>
-                            Consensus handshake confirmed by FastAPI backend.
+                            Payout disbursed directly to worker's cooperative account.
                           </p>
                         </div>
                       </div>
 
-                      {/* Transparent Cooperative Settlement Breakdown */}
+                      {/* Transparent Settlement Breakdown */}
                       <div className="technician-payout-card">
                         <div className="payout-row highlight">
                           <span>Worker Labour Floor (100%):</span>
@@ -1041,7 +1329,7 @@ export default function PresentationMode() {
                         </div>
                         {quotation && quotation.status === "APPROVED" && (
                           <div className="payout-row" style={{ color: "#059669" }}>
-                            <span>Approved Extra Labour / Parts:</span>
+                            <span>Approved Additional Labour / Parts:</span>
                             <strong>+₹{quotation.additional_amount}.00</strong>
                           </div>
                         )}
@@ -1054,7 +1342,7 @@ export default function PresentationMode() {
 
                       <div style={{ marginTop: "14px", textAlign: "center" }}>
                         <span className="guarantee-status-tag active" style={{ display: "inline-block" }}>
-                          🛡️ 3-Day Workmanship Guarantee Active
+                          🛡️ 3-Day Workmanship Protection ACTIVE
                         </span>
                       </div>
                     </div>
@@ -1065,8 +1353,8 @@ export default function PresentationMode() {
                 {normStatus === "COMPLETED" && (
                   <div style={{ marginTop: "16px" }}>
                     <WarrantyCountdown
-                      warrantyExpiresAt={booking?.warranty_expires_at}
-                      warrantyStartedAt={booking?.warranty_started_at}
+                      warrantyExpiresAt={effectiveWarrantyExpiresAt}
+                      warrantyStartedAt={effectiveWarrantyStartedAt}
                       status={normStatus}
                       compact={true}
                     />
@@ -1077,6 +1365,51 @@ export default function PresentationMode() {
           </div>
         )}
       </main>
+
+      {/* 12. Reset Demo Confirmation Modal */}
+      {showResetModal && (
+        <div className="tracker-modal-overlay">
+          <div className="tracker-modal-content" style={{ maxWidth: "440px" }}>
+            <div className="tracker-header">
+              <div>
+                <span className="live-pill" style={{ background: "#fee2e2", color: "#b91c1c" }}>
+                  RESET CONFIRMATION
+                </span>
+                <h2 style={{ margin: "4px 0 0", fontSize: "18px" }}>
+                  Reset this demo booking to the starting state?
+                </h2>
+                <p style={{ margin: "6px 0 0", fontSize: "13px", color: "#64748b" }}>
+                  This will return this demo booking to the starting state, clear quotations, reset payments, and restart the live demo flow.
+                </p>
+              </div>
+              <button className="tracker-close-btn" onClick={() => setShowResetModal(false)}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+              <button
+                type="button"
+                className="secondary-btn"
+                style={{ flex: 1 }}
+                onClick={() => setShowResetModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-btn"
+                style={{ flex: 1, background: "#ef4444", borderColor: "#ef4444" }}
+                onClick={handleConfirmResetDemo}
+              >
+                Reset Demo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+
