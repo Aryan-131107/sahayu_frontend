@@ -20,6 +20,7 @@ import {
   completeBooking,
 } from "./api";
 import WarrantyCountdown from "./WarrantyCountdown";
+import VoiceAssistant from "./VoiceAssistant";
 import "./App.css";
 
 function Worker() {
@@ -646,6 +647,9 @@ function Worker() {
             </button>
           </div>
         </div>
+
+        {/* 🎙️ BHASHINI VOICE ASSISTANT */}
+        <VoiceAssistant />
 
         {/* 4. 📋 WORKER ACTIVE JOB QUEUE & OTP ACTIONS */}
         <section className="worker-jobs">

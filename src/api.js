@@ -57,12 +57,14 @@ async function request(endpoint, options = {}) {
 
   for (const base of candidates) {
     const url = `${base}${cleanEndpoint}`;
+    const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+    const defaultHeaders = isFormData ? {} : { "Content-Type": "application/json" };
     const config = {
+      ...options,
       headers: {
-        "Content-Type": "application/json",
+        ...defaultHeaders,
         ...(options.headers || {}),
       },
-      ...options,
     };
 
     try {
@@ -778,3 +780,78 @@ export const getAllStoredVerifications = () => {
     return {};
   }
 };
+
+// Helper: Convert Blob to Base64 String
+export function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        const parts = result.split(",");
+        resolve(parts.length > 1 ? parts[1] : parts[0]);
+      } else {
+        resolve("");
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Bhashini Voice Assistant API (Proxied through backend)
+export const transcribeAudio = async (audioBlob) => {
+  const formData = new FormData();
+  formData.append("file", audioBlob, "recording.wav");
+  formData.append("audio", audioBlob, "recording.wav");
+
+  try {
+    return await request("/voice/transcribe", {
+      method: "POST",
+      body: formData,
+    });
+  } catch (err) {
+    if (err.status === 404 || err.status === 422) {
+      try {
+        return await request("/api/voice/transcribe", {
+          method: "POST",
+          body: formData,
+        });
+      } catch (err2) {
+        // Fallback with base64 json
+        const base64 = await blobToBase64(audioBlob);
+        try {
+          return await request("/voice/transcribe", {
+            method: "POST",
+            body: JSON.stringify({ audio: base64, audio_base64: base64, language: "hi" }),
+          });
+        } catch (err3) {
+          return await request("/api/voice/transcribe", {
+            method: "POST",
+            body: JSON.stringify({ audio: base64, audio_base64: base64, language: "hi" }),
+          });
+        }
+      }
+    }
+    throw err;
+  }
+};
+
+export const synthesizeSpeech = async (text, language = "hi") => {
+  const payload = JSON.stringify({ text, language, target_language: language, input: text });
+  try {
+    return await request("/voice/speak", {
+      method: "POST",
+      body: payload,
+    });
+  } catch (err) {
+    if (err.status === 404) {
+      return await request("/api/voice/speak", {
+        method: "POST",
+        body: payload,
+      });
+    }
+    throw err;
+  }
+};
+
