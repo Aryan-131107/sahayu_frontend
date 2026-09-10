@@ -208,12 +208,17 @@ export default function PresentationMode() {
     }
   };
 
+  // Clear error state whenever booking status updates
+  useEffect(() => {
+    setError("");
+    setOtpError("");
+  }, [booking?.status]);
+
   // Technician accepts service request
   const handleAcceptJob = async () => {
     if (!booking) return;
     const currentStatus = (booking.status || "").toUpperCase();
-    if (currentStatus === "CANCELLED") {
-      setOtpError("Booking is Cancelled. Click 'Reset Demo' above to re-initialize.");
+    if (currentStatus !== "ASSIGNED" && currentStatus !== "PENDING") {
       return;
     }
 
@@ -223,7 +228,18 @@ export default function PresentationMode() {
 
     try {
       const updated = await acceptBooking(booking.booking_id);
-      setBooking(updated);
+      if (updated && updated.booking_id) {
+        setBooking((prev) => ({
+          ...(prev || {}),
+          ...updated,
+          status: "ACCEPTED",
+        }));
+      } else {
+        setBooking((prev) => ({
+          ...(prev || {}),
+          status: "ACCEPTED",
+        }));
+      }
       await fetchAuthoritativeBooking(booking.booking_id, true);
     } catch (err) {
       setOtpError(err.message || "Failed to accept booking.");
@@ -231,6 +247,8 @@ export default function PresentationMode() {
       setAcceptingJob(false);
     }
   };
+
+  const handleAcceptOrder = handleAcceptJob;
 
   // Technician verifies Start PIN
   const handleVerifyStartPin = async (e) => {
@@ -466,7 +484,8 @@ export default function PresentationMode() {
   const isEndVerified = Boolean(booking?.end_otp_verified_at || isPaymentPending);
 
   const rawStatus = (booking?.status || "").toUpperCase();
-  let normStatus = rawStatus || "PENDING";
+  const normalizedStatus = rawStatus || "PENDING";
+  let normStatus = normalizedStatus;
   if (isPaid || rawStatus === "COMPLETED") {
     normStatus = "COMPLETED";
   } else if (isEndVerified) {
