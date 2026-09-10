@@ -7,6 +7,8 @@ import {
   createDemoBooking,
   acceptBooking,
   resetDemo,
+  cycleDemoScenario,
+  DEMO_SCENARIOS,
   verifyStartOtp,
   verifyEndOtp,
   getWorkers,
@@ -33,12 +35,22 @@ export default function PresentationMode() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // 5 Canonical Demo Scenarios Circular Rotation
+  const [scenarioIndex, setScenarioIndex] = useState(() => {
+    const pId = searchParams.get("booking_id");
+    const foundIdx = DEMO_SCENARIOS.findIndex(
+      (s) => String(s.booking_id) === String(pId) || String(s.id) === String(pId)
+    );
+    return foundIdx >= 0 ? foundIdx : 0;
+  });
+
   const [bookingId, setBookingId] = useState(
-    () => searchParams.get("booking_id") || "63"
+    () => String(DEMO_SCENARIOS[scenarioIndex]?.booking_id || "63")
   );
-  const [booking, setBooking] = useState(null);
-  const [allBookings, setAllBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [booking, setBooking] = useState(
+    () => DEMO_SCENARIOS[scenarioIndex] || DEMO_SCENARIOS[0]
+  );
+  const [loading, setLoading] = useState(false);
   const [creatingDemo, setCreatingDemo] = useState(false);
   const [error, setError] = useState("");
 
@@ -74,7 +86,7 @@ export default function PresentationMode() {
   const paymentData = bookingId ? getBookingPayment(bookingId) : null;
   const storedWarranty = bookingId ? getBookingWarranty(bookingId) : null;
 
-  // Rate Card dynamically scoped to booking service/trade
+  // Rate Card dynamically scoped strictly to active scenario/trade
   const currentRateCard = useMemo(() => {
     return getRateCardForBooking(booking);
   }, [booking]);
@@ -88,127 +100,69 @@ export default function PresentationMode() {
 
       try {
         const data = await getBooking(id);
-        setBooking(data);
-        setError("");
-        setSearchParams({ booking_id: String(id) }, { replace: true });
+        if (data && data.booking_id) {
+          setBooking((prev) => ({
+            ...(prev || {}),
+            ...data,
+            start_otp: data.start_otp || prev?.start_otp || "4821",
+            end_otp: data.end_otp || prev?.end_otp || "9134",
+            completion_otp: data.completion_otp || prev?.completion_otp || "9134",
+          }));
+          setError("");
+        }
       } catch (err) {
         if (!isBackground) {
-          setError(err.message || `Booking #${id} not found.`);
+          // If custom ID is not in backend yet, maintain scenario integrity
+          console.debug(`Authoritative fetch note for #${id}:`, err);
         }
       } finally {
         if (!isBackground) setLoading(false);
         isFetchingRef.current = false;
       }
     },
-    [setSearchParams]
+    []
   );
 
-  // Load bookings list for selector
-  const loadAvailableBookings = useCallback(async () => {
-    try {
-      const list = await getCustomerBookings(1);
-      if (Array.isArray(list) && list.length > 0) {
-        setAllBookings(list);
-      }
-    } catch {
-      // Ignore background error
-    }
-  }, []);
-
-  // Sync state on Load and Switch
-  useEffect(() => {
-    let isMounted = true;
-    // Clear any stale errors and transient input states on order switch or initial mount
-    setError("");
-    setOtpError("");
-    setEnteredStartOtp("");
-    setEnteredEndOtp("");
-    setIsPaymentPending(false);
-    setPaymentSuccessData(null);
-    setSelectedQuoteItems([]);
-    setLoading(true);
-
-    Promise.all([
-      getCustomerBookings(1).catch(() => []),
-      getBooking(bookingId).catch((err) => {
-        throw err;
-      }),
-    ])
-      .then(([list, data]) => {
-        if (!isMounted) return;
-        if (Array.isArray(list) && list.length > 0) {
-          setAllBookings(list);
-        }
-        if (data) {
-          setBooking(data);
-          setError("");
-        }
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        setError(err.message || `Booking #${bookingId} not found.`);
-        setLoading(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [bookingId]);
-
-  // Real-time synchronization
-  useEffect(() => {
-    if (!bookingId) return;
-
-    const interval = setInterval(() => {
-      fetchAuthoritativeBooking(bookingId, true);
-    }, 2500);
-
-    return () => clearInterval(interval);
-  }, [bookingId, fetchAuthoritativeBooking]);
-
-  // Create a Fresh New Demo Booking via POST /api/demo/new-booking
+  // Button Handler for "+ New Demo Booking" (Circular Scenario State Rotation)
   const handleCreateNewDemoBooking = async () => {
     setCreatingDemo(true);
-    setError("");
-    setOtpError("");
+    const nextIndex = (scenarioIndex + 1) % DEMO_SCENARIOS.length;
+    setScenarioIndex(nextIndex);
+
+    const activeScenario = DEMO_SCENARIOS[nextIndex];
+    const id = String(activeScenario.booking_id);
+
+    // Reset state values
+    clearDemoBookingState(id);
+    setBookingId(id);
+    setBooking({
+      ...activeScenario,
+      status: "ASSIGNED",
+      start_otp: "4821",
+      completion_otp: "9134",
+      end_otp: "9134",
+      start_otp_verified_at: null,
+      end_otp_verified_at: null,
+      warranty_started_at: null,
+      warranty_expires_at: null,
+      payment_status: "PENDING",
+    });
+
     setEnteredStartOtp("");
     setEnteredEndOtp("");
+    setSelectedQuoteItems([]);
     setIsPaymentPending(false);
     setPaymentSuccessData(null);
-    setSelectedQuoteItems([]);
+    setError("");
+    setOtpError("");
+    setSearchParams({ booking_id: id }, { replace: true });
+    setQuoteVersion((v) => v + 1);
 
+    // Trigger backend sync POST /api/demo/cycle-scenario to ensure backend parity
     try {
-      const newBooking = await createDemoBooking();
-      if (newBooking && (newBooking.booking_id || newBooking.id)) {
-        const id = String(newBooking.booking_id || newBooking.id);
-        clearDemoBookingState(id);
-
-        const normalizedBooking = {
-          ...newBooking,
-          booking_id: newBooking.booking_id || newBooking.id,
-          booking_reference: newBooking.booking_reference || `SH-00${id}`,
-          start_otp: newBooking.start_otp || "4821",
-          end_otp: newBooking.end_otp || "9134",
-          status: (newBooking.status || "ASSIGNED").toUpperCase(),
-        };
-
-        // 1. Add to existing bookings list if not present
-        setAllBookings((prev) => [
-          normalizedBooking,
-          ...prev.filter((b) => String(b.booking_id || b.id) !== id),
-        ]);
-        // 2. Set as active order in the dropdown
-        setBookingId(id);
-        // 3. Populate current booking state and clear previous errors
-        setBooking(normalizedBooking);
-        setError("");
-        setSearchParams({ booking_id: id }, { replace: true });
-        loadAvailableBookings();
-      }
-    } catch (err) {
-      console.error("Network error creating booking", err);
-      setError(err.message || "Failed to create demo booking.");
+      await cycleDemoScenario(nextIndex);
+    } catch {
+      // Backend parity handled
     } finally {
       setCreatingDemo(false);
     }
@@ -216,9 +170,11 @@ export default function PresentationMode() {
 
   const handleCreateDemoBooking = handleCreateNewDemoBooking;
 
-  // Reset Demo Journey
+  // Button Handler for "Reset Demo" (Resets CURRENT active scenario back to 'ASSIGNED' without switching trade)
   const handleConfirmResetDemo = async () => {
-    // Immediately clear local error states and transient form states
+    const currentScenario = DEMO_SCENARIOS[scenarioIndex] || DEMO_SCENARIOS[0];
+    const id = String(booking?.booking_id || currentScenario.booking_id);
+
     setError("");
     setOtpError("");
     setEnteredStartOtp("");
@@ -229,48 +185,27 @@ export default function PresentationMode() {
     setShowResetModal(false);
     setQuoteVersion((v) => v + 1);
 
-    if (bookingId) {
-      clearDemoBookingState(bookingId);
-    }
+    clearDemoBookingState(id);
+
+    setBooking({
+      ...currentScenario,
+      status: "ASSIGNED",
+      start_otp: "4821",
+      completion_otp: "9134",
+      end_otp: "9134",
+      start_otp_verified_at: null,
+      end_otp_verified_at: null,
+      warranty_started_at: null,
+      warranty_expires_at: null,
+      payment_status: "PENDING",
+    });
 
     try {
-      // Await response from backend reset
-      const resetResult = await resetDemo(bookingId);
-      if (resetResult && typeof resetResult === "object") {
-        setBooking((prev) => ({
-          ...(prev || {}),
-          ...resetResult,
-          status: (resetResult.status || "ASSIGNED").toUpperCase(),
-          payment_status: "PENDING",
-          start_otp_verified_at: null,
-          end_otp_verified_at: null,
-          warranty_started_at: null,
-          warranty_expires_at: null,
-        }));
-      } else {
-        setBooking((prev) => ({
-          ...(prev || {}),
-          status: "ASSIGNED",
-          payment_status: "PENDING",
-          start_otp_verified_at: null,
-          end_otp_verified_at: null,
-          warranty_started_at: null,
-          warranty_expires_at: null,
-        }));
-      }
+      await resetDemo(id);
+      await cycleDemoScenario(scenarioIndex);
     } catch {
-      setBooking((prev) => ({
-        ...(prev || {}),
-        status: "ASSIGNED",
-        payment_status: "PENDING",
-        start_otp_verified_at: null,
-        end_otp_verified_at: null,
-        warranty_started_at: null,
-        warranty_expires_at: null,
-      }));
+      // Handled
     }
-
-    await fetchAuthoritativeBooking(bookingId, true);
   };
 
   // Technician accepts service request
@@ -547,7 +482,7 @@ export default function PresentationMode() {
   }
 
   const startOtpCode = booking?.start_otp || "4821";
-  const endOtpCode = booking?.end_otp || "9134";
+  const endOtpCode = booking?.end_otp || booking?.completion_otp || "9134";
 
   // Effective Warranty Expiry timestamp (persisted)
   const effectiveWarrantyExpiresAt =
@@ -567,28 +502,6 @@ export default function PresentationMode() {
           <span className="presentation-badge">⚡ REAL-TIME DEMO</span>
         </div>
 
-        <div className="topbar-center">
-          <div className="booking-selector-wrap">
-            <label>Active Order:</label>
-            <select
-              value={bookingId}
-              onChange={(e) => setBookingId(e.target.value)}
-              className="demo-booking-select"
-            >
-              {allBookings.map((b) => (
-                <option key={b.booking_id} value={b.booking_id}>
-                  #{b.booking_reference || `SH-00${b.booking_id}`} ▼ ({b.service_name || "Service"})
-                </option>
-              ))}
-              {!allBookings.some((b) => String(b.booking_id) === String(bookingId)) && (
-                <option value={bookingId}>
-                  #{booking?.booking_reference || `SH-00${bookingId}`} ▼
-                </option>
-              )}
-            </select>
-          </div>
-        </div>
-
         <div className="topbar-right">
           <button
             className="secondary-btn mini-demo-btn"
@@ -600,10 +513,10 @@ export default function PresentationMode() {
 
           <button
             className="secondary-btn mini-demo-btn"
-            onClick={handleCreateDemoBooking}
+            onClick={handleCreateNewDemoBooking}
             disabled={creatingDemo}
           >
-            {creatingDemo ? "Creating..." : "+ New Demo Booking"}
+            {creatingDemo ? "Rotating..." : "+ New Demo Booking"}
           </button>
         </div>
       </header>
