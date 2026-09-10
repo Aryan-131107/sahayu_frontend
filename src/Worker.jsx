@@ -596,8 +596,16 @@ function Worker() {
               </div>
 
               <div className="job-card-body">
-                {/* Status: PENDING -> Worker accepts job */}
-                {activeJob.status === "PENDING" && (
+                {/* Status: CANCELLED -> Notice */}
+                {activeJob.status === "CANCELLED" && (
+                  <div className="job-step-action-box" style={{ background: "#fef2f2", borderColor: "#f87171" }}>
+                    <strong style={{ color: "#991b1b" }}>Booking is Cancelled</strong>
+                    <p style={{ color: "#b91c1c", marginTop: "4px" }}>This booking order has been cancelled.</p>
+                  </div>
+                )}
+
+                {/* Status: PENDING / ASSIGNED -> Worker accepts job */}
+                {(activeJob.status === "PENDING" || activeJob.status === "ASSIGNED") && (
                   <div className="job-step-action-box">
                     <p>New service request in your area. Accept to dispatch and view customer location.</p>
                     <button

@@ -607,6 +607,16 @@ function App() {
           element={<PresentationMode />}
         />
 
+        <Route
+          path="/live-split-demo"
+          element={<PresentationMode />}
+        />
+
+        <Route
+          path="/split-demo"
+          element={<PresentationMode />}
+        />
+
       </Routes>
 
     </BrowserRouter>

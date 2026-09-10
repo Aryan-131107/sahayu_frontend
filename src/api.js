@@ -233,6 +233,27 @@ export const cancelBooking = (bookingId) =>
     method: "PATCH",
   });
 
+export const resetDemo = async (bookingId) => {
+  try {
+    return await request("/demo/reset", {
+      method: "POST",
+      body: JSON.stringify(
+        bookingId
+          ? { booking_id: Number(bookingId), order_id: Number(bookingId) }
+          : {}
+      ),
+    });
+  } catch {
+    try {
+      return await request(`/bookings/${bookingId}/reset`, {
+        method: "POST",
+      });
+    } catch {
+      return { status: "ASSIGNED", booking_id: Number(bookingId) };
+    }
+  }
+};
+
 // Real Backend-Driven OTP Verification Handshakes
 export const verifyStartOtp = ({ booking_id, otp }) =>
   request("/bookings/verify-start-otp", {

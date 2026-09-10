@@ -5,6 +5,7 @@ import {
   getCustomerBookings,
   createBooking,
   acceptBooking,
+  resetDemo,
   verifyStartOtp,
   verifyEndOtp,
   getWorkers,
@@ -113,11 +114,24 @@ export default function PresentationMode() {
     }
   }, []);
 
+  // Sync state on Load and Switch
   useEffect(() => {
     let isMounted = true;
+    // Clear any stale errors and transient input states on order switch or initial mount
+    setError("");
+    setOtpError("");
+    setEnteredStartOtp("");
+    setEnteredEndOtp("");
+    setIsPaymentPending(false);
+    setPaymentSuccessData(null);
+    setSelectedQuoteItems([]);
+    setLoading(true);
+
     Promise.all([
       getCustomerBookings(1).catch(() => []),
-      getBooking(bookingId).catch(() => null),
+      getBooking(bookingId).catch((err) => {
+        throw err;
+      }),
     ])
       .then(([list, data]) => {
         if (!isMounted) return;
@@ -189,22 +203,50 @@ export default function PresentationMode() {
 
   // Reset Demo Journey
   const handleConfirmResetDemo = async () => {
-    if (bookingId) {
-      clearDemoBookingState(bookingId);
-    }
+    // Immediately clear local error states and transient form states
+    setError("");
+    setOtpError("");
     setEnteredStartOtp("");
     setEnteredEndOtp("");
-    setOtpError("");
     setSelectedQuoteItems([]);
     setIsPaymentPending(false);
     setPaymentSuccessData(null);
     setShowResetModal(false);
     setQuoteVersion((v) => v + 1);
 
-    if (booking) {
+    if (bookingId) {
+      clearDemoBookingState(bookingId);
+    }
+
+    try {
+      // Await response from backend reset
+      const resetResult = await resetDemo(bookingId);
+      if (resetResult && typeof resetResult === "object") {
+        setBooking((prev) => ({
+          ...(prev || {}),
+          ...resetResult,
+          status: (resetResult.status || "ASSIGNED").toUpperCase(),
+          payment_status: "PENDING",
+          start_otp_verified_at: null,
+          end_otp_verified_at: null,
+          warranty_started_at: null,
+          warranty_expires_at: null,
+        }));
+      } else {
+        setBooking((prev) => ({
+          ...(prev || {}),
+          status: "ASSIGNED",
+          payment_status: "PENDING",
+          start_otp_verified_at: null,
+          end_otp_verified_at: null,
+          warranty_started_at: null,
+          warranty_expires_at: null,
+        }));
+      }
+    } catch {
       setBooking((prev) => ({
-        ...prev,
-        status: "ACCEPTED",
+        ...(prev || {}),
+        status: "ASSIGNED",
         payment_status: "PENDING",
         start_otp_verified_at: null,
         end_otp_verified_at: null,
@@ -212,12 +254,19 @@ export default function PresentationMode() {
         warranty_expires_at: null,
       }));
     }
+
     await fetchAuthoritativeBooking(bookingId, true);
   };
 
   // Technician accepts service request
   const handleAcceptJob = async () => {
     if (!booking) return;
+    const currentStatus = (booking.status || "").toUpperCase();
+    if (currentStatus === "CANCELLED") {
+      setOtpError("Booking is Cancelled. Click 'Reset Demo' above to re-initialize.");
+      return;
+    }
+
     setAcceptingJob(true);
     setOtpError("");
     setError("");
@@ -466,15 +515,20 @@ export default function PresentationMode() {
   const isPaid = paymentData?.status === "PAID" || booking?.payment_status === "PAID";
   const isEndVerified = Boolean(booking?.end_otp_verified_at || isPaymentPending);
 
-  let normStatus = "PENDING";
-  if (isPaid || booking?.status === "COMPLETED") {
+  const rawStatus = (booking?.status || "").toUpperCase();
+  let normStatus = rawStatus || "PENDING";
+  if (isPaid || rawStatus === "COMPLETED") {
     normStatus = "COMPLETED";
   } else if (isEndVerified) {
     normStatus = "PAYMENT_PENDING";
-  } else if (booking?.status === "IN_PROGRESS") {
+  } else if (rawStatus === "IN_PROGRESS") {
     normStatus = "IN_PROGRESS";
-  } else if (booking?.status === "ACCEPTED") {
+  } else if (rawStatus === "ACCEPTED") {
     normStatus = "ACCEPTED";
+  } else if (rawStatus === "ASSIGNED") {
+    normStatus = "ASSIGNED";
+  } else if (rawStatus === "CANCELLED") {
+    normStatus = "CANCELLED";
   }
 
   const startOtpCode = booking?.start_otp || "4821";
@@ -549,7 +603,7 @@ export default function PresentationMode() {
         <div className="ribbon-item">
           <span className="ribbon-lbl">STATUS:</span>
           <strong className={`status-pill ${normStatus.toLowerCase()}`}>
-            ● {normStatus === "ACCEPTED" ? "ARRIVED" : normStatus === "IN_PROGRESS" ? "IN PROGRESS" : normStatus === "PAYMENT_PENDING" ? "PAYMENT PENDING" : normStatus}
+            ● {normStatus === "ACCEPTED" ? "ARRIVED" : normStatus === "IN_PROGRESS" ? "IN PROGRESS" : normStatus === "PAYMENT_PENDING" ? "PAYMENT PENDING" : normStatus === "CANCELLED" ? "CANCELLED" : normStatus === "ASSIGNED" ? "ASSIGNED" : normStatus}
           </strong>
         </div>
 
@@ -614,9 +668,15 @@ export default function PresentationMode() {
                       </h3>
                     </div>
                     <span className={`status-pill ${normStatus.toLowerCase()}`}>
-                      ● {normStatus === "ACCEPTED" ? "ARRIVED" : normStatus === "IN_PROGRESS" ? "IN PROGRESS" : normStatus === "PAYMENT_PENDING" ? "PAYMENT PENDING" : normStatus}
+                      ● {normStatus === "ACCEPTED" ? "ARRIVED" : normStatus === "IN_PROGRESS" ? "IN PROGRESS" : normStatus === "PAYMENT_PENDING" ? "PAYMENT PENDING" : normStatus === "CANCELLED" ? "CANCELLED" : normStatus === "ASSIGNED" ? "ASSIGNED" : normStatus}
                     </span>
                   </div>
+
+                  {normStatus === "CANCELLED" && (
+                    <div style={{ background: "#fef2f2", border: "1px solid #f87171", borderRadius: "8px", padding: "8px 10px", margin: "8px 0 4px", color: "#991b1b", fontSize: "12px" }}>
+                      ⚠️ Booking is Cancelled. Click 'Reset Demo' above to re-initialize.
+                    </div>
+                  )}
 
                   <p style={{ fontSize: "12px", color: "#64748b", margin: "6px 0 0" }}>
                     📍 {booking?.address || "Civil Lines, Jabalpur"} · Scheduled for Today
@@ -1004,11 +1064,42 @@ export default function PresentationMode() {
                     <small>Live Job Status</small>
                   </div>
 
-                  {/* ERROR DISPLAY WITH SHAKE */}
-                  {otpError && <div className="terminal-error-alert">{otpError}</div>}
+                  {/* ERROR DISPLAY WITH SHAKE & DISMISS BUTTON */}
+                  {otpError && (
+                    <div className="terminal-error-alert" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>{otpError}</span>
+                      <button
+                        type="button"
+                        onClick={() => setOtpError("")}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: "#b91c1c",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                          fontSize: "14px",
+                          marginLeft: "8px",
+                          lineHeight: 1,
+                        }}
+                        title="Dismiss error"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
 
-                  {/* STATE 1: PENDING -> Accept Booking */}
-                  {normStatus === "PENDING" && (
+                  {/* CANCELLED STATE NOTICE */}
+                  {normStatus === "CANCELLED" && (
+                    <div className="terminal-step-box" style={{ background: "#fef2f2", borderColor: "#f87171" }}>
+                      <h4 style={{ margin: 0, color: "#991b1b" }}>Booking is Cancelled</h4>
+                      <p style={{ margin: "6px 0 0", fontSize: "13px", color: "#b91c1c" }}>
+                        Booking is Cancelled. Click 'Reset Demo' above to re-initialize.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* STATE 1: PENDING / ASSIGNED -> Accept Booking */}
+                  {(normStatus === "PENDING" || normStatus === "ASSIGNED") && (
                     <div className="terminal-step-box">
                       <h4>New Service Order Assigned</h4>
                       <p>
@@ -1075,6 +1166,30 @@ export default function PresentationMode() {
                   {/* STATE 3: IN_PROGRESS -> Trade Rate Card Quotation Builder & Completion PIN */}
                   {normStatus === "IN_PROGRESS" && (
                     <div>
+                      {/* Active Job Execution Status Badge */}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          background: "#ecfdf5",
+                          border: "1px solid #10b981",
+                          borderRadius: "8px",
+                          padding: "8px 12px",
+                          marginBottom: "12px",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span style={{ color: "#059669", fontWeight: 800 }}>✓</span>
+                          <strong style={{ fontSize: "12px", color: "#065f46" }}>
+                            START PIN VERIFIED · JOB IN PROGRESS
+                          </strong>
+                        </div>
+                        <span className="live-pill" style={{ fontSize: "10px", padding: "2px 6px" }}>
+                          ACTIVE
+                        </span>
+                      </div>
+
                       {/* 7 & 8. ON-SITE INSPECTION & ADDITIONAL WORK RATE CARD */}
                       <div className="terminal-step-box" style={{ marginBottom: "14px" }}>
                         <div style={{ marginBottom: "8px" }}>
