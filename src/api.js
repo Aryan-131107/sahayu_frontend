@@ -254,6 +254,33 @@ export const resetDemo = async (bookingId) => {
   }
 };
 
+export const createDemoBooking = async () => {
+  try {
+    return await request("/demo/new-booking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+  } catch {
+    try {
+      return await request("/demo/booking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch {
+      const workers = await getWorkers(false).catch(() => []);
+      const workerId = workers.length > 0 ? workers[0].worker_id : 11;
+      return await createBooking({
+        customer_id: 1,
+        worker_id: workerId,
+        service_id: 1,
+        service_lat: 23.1815,
+        service_lon: 79.9864,
+        amount: 239,
+      });
+    }
+  }
+};
+
 // Real Backend-Driven OTP Verification Handshakes
 export const verifyStartOtp = ({ booking_id, otp }) =>
   request("/bookings/verify-start-otp", {

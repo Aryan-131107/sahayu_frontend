@@ -4,6 +4,7 @@ import {
   getBooking,
   getCustomerBookings,
   createBooking,
+  createDemoBooking,
   acceptBooking,
   resetDemo,
   verifyStartOtp,
@@ -166,40 +167,54 @@ export default function PresentationMode() {
     return () => clearInterval(interval);
   }, [bookingId, fetchAuthoritativeBooking]);
 
-  // Create a Fresh New Demo Booking
-  const handleCreateDemoBooking = async () => {
+  // Create a Fresh New Demo Booking via POST /api/demo/new-booking
+  const handleCreateNewDemoBooking = async () => {
     setCreatingDemo(true);
     setError("");
     setOtpError("");
+    setEnteredStartOtp("");
+    setEnteredEndOtp("");
     setIsPaymentPending(false);
     setPaymentSuccessData(null);
     setSelectedQuoteItems([]);
 
     try {
-      const workers = await getWorkers(false).catch(() => []);
-      const workerId = workers.length > 0 ? workers[0].worker_id : 11;
+      const newBooking = await createDemoBooking();
+      if (newBooking && (newBooking.booking_id || newBooking.id)) {
+        const id = String(newBooking.booking_id || newBooking.id);
+        clearDemoBookingState(id);
 
-      const newBooking = await createBooking({
-        customer_id: 1,
-        worker_id: workerId,
-        service_id: 1,
-        service_lat: 23.1815,
-        service_lon: 79.9864,
-        amount: 239,
-      });
+        const normalizedBooking = {
+          ...newBooking,
+          booking_id: newBooking.booking_id || newBooking.id,
+          booking_reference: newBooking.booking_reference || `SH-00${id}`,
+          start_otp: newBooking.start_otp || "4821",
+          end_otp: newBooking.end_otp || "9134",
+          status: (newBooking.status || "ASSIGNED").toUpperCase(),
+        };
 
-      if (newBooking && newBooking.booking_id) {
-        clearDemoBookingState(newBooking.booking_id);
-        setBookingId(String(newBooking.booking_id));
-        setBooking(newBooking);
+        // 1. Add to existing bookings list if not present
+        setAllBookings((prev) => [
+          normalizedBooking,
+          ...prev.filter((b) => String(b.booking_id || b.id) !== id),
+        ]);
+        // 2. Set as active order in the dropdown
+        setBookingId(id);
+        // 3. Populate current booking state and clear previous errors
+        setBooking(normalizedBooking);
+        setError("");
+        setSearchParams({ booking_id: id }, { replace: true });
         loadAvailableBookings();
       }
     } catch (err) {
+      console.error("Network error creating booking", err);
       setError(err.message || "Failed to create demo booking.");
     } finally {
       setCreatingDemo(false);
     }
   };
+
+  const handleCreateDemoBooking = handleCreateNewDemoBooking;
 
   // Reset Demo Journey
   const handleConfirmResetDemo = async () => {
