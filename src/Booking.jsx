@@ -200,7 +200,7 @@ function Booking() {
               </div>
 
               <div>
-                <small>Total Booking Fee</small>
+                <small>Initial Inspection Fee</small>
                 <strong style={{ color: "#059669", fontSize: "18px" }}>₹{totalAmount}</strong>
               </div>
 
@@ -214,7 +214,7 @@ function Booking() {
           {/* Transparent Itemized Price Box */}
           <div className="invoice-preview-box">
             <div className="invoice-preview-header">
-              <h4>SAHAYU SERVICE PRICING BREAKDOWN</h4>
+              <h4>SAHAYU SERVICE PRICING BREAKDOWN (PAY AFTER COMPLETION)</h4>
               <button
                 type="button"
                 className="view-invoice-link"
@@ -238,14 +238,14 @@ function Booking() {
                 <strong>₹{gullakContribution}</strong>
               </div>
               <div className="invoice-row total-row">
-                <span>Total Amount to Pay</span>
+                <span>Initial Inspection Total (Pay After Completion)</span>
                 <strong className="total-highlight">₹{totalAmount}</strong>
               </div>
             </div>
 
             <div className="guarantee-badge-row">
-              <span>✓ 100% of ₹199 goes directly to worker</span>
-              <span>✓ 0% platform deduction from worker payout</span>
+              <span>💳 ₹0 Paid Upfront · Payment collected only after job is finished</span>
+              <span>✓ 100% of ₹199 labour floor goes directly to worker</span>
               <span>🛡️ 3-Day Workmanship Guarantee Included</span>
             </div>
           </div>
@@ -256,7 +256,7 @@ function Booking() {
               onClick={handleConfirmAndPay}
               disabled={submitting || loading}
             >
-              {submitting ? "Processing Order..." : `Confirm & Book for ₹${totalAmount}`}
+              {submitting ? "Booking Appointment..." : `Confirm Service Booking (Pay ₹${totalAmount} After Job)`}
             </button>
           </div>
         </div>
@@ -345,7 +345,7 @@ function Booking() {
                 }}
                 disabled={submitting}
               >
-                {submitting ? "Confirming..." : `Confirm & Pay ₹${totalAmount}`}
+                {submitting ? "Confirming..." : `Confirm Booking (Pay ₹${totalAmount} After Job)`}
               </button>
               <button
                 className="secondary-btn"

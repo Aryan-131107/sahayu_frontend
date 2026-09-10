@@ -38,7 +38,7 @@ function Home() {
 
       {/* NAVBAR */}
       <nav className="navbar">
-        <div className="logo">
+        <div className="logo" onClick={() => navigate("/")} style={{ cursor: "pointer" }}>
           <span className="logo-icon">S</span>
           <span>Sahāyu</span>
         </div>
@@ -48,14 +48,6 @@ function Home() {
           <a href="#how-it-works">How It Works</a>
           <a href="#workers">For Workers</a>
           <a href="#about">About Us</a>
-          <button
-            type="button"
-            className="text-link-btn"
-            style={{ color: "#0284c7", fontWeight: 700, cursor: "pointer", background: "none", border: "none", font: "inherit" }}
-            onClick={() => navigate("/live-demo")}
-          >
-            ⚡ Live Demo
-          </button>
         </div>
 
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>

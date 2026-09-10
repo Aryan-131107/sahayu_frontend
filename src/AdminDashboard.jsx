@@ -105,6 +105,27 @@ function AdminDashboardContent() {
   const [error, setError] = useState("");
   const [actionSuccess, setActionSuccess] = useState("");
 
+  // Demo Reset Modal State
+  const [showResetModal, setShowResetModal] = useState(false);
+
+  const handleResetDemoState = () => {
+    try {
+      // Clear quotations and simulated payments
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith("sahayu_quotation_") || key.startsWith("sahayu_payment_"))) {
+          localStorage.removeItem(key);
+        }
+      }
+      setShowResetModal(false);
+      setActionSuccess("✓ Demo data state reset successfully.");
+      setTimeout(() => setActionSuccess(""), 4000);
+      loadDashboardData();
+    } catch {
+      setShowResetModal(false);
+    }
+  };
+
   // Emergency Grant Modal State
   const [showGrantModal, setShowGrantModal] = useState(false);
   const [grantCategory, setGrantCategory] = useState("Emergency Healthcare Assistance");
@@ -247,8 +268,8 @@ function AdminDashboardContent() {
         setSkills(Array.isArray(skillsData) ? skillsData : []);
         setBookings(Array.isArray(bookingsData) ? bookingsData : []);
 
-        if (mergedWorkers.length > 0 && !grantBeneficiaryId) {
-          setGrantBeneficiaryId(String(mergedWorkers[0].worker_id));
+        if (mergedWorkers.length > 0) {
+          setGrantBeneficiaryId((prev) => prev || String(mergedWorkers[0].worker_id));
         }
 
         // Unblock main UI immediately
@@ -283,7 +304,7 @@ function AdminDashboardContent() {
         setError(err.message || "Failed to load admin dashboard data.");
         setLoading(false);
       });
-  }, [loadGullakData, grantBeneficiaryId]);
+  }, [loadGullakData, setGrantBeneficiaryId]);
 
   useEffect(() => {
     if (isAdminAuthenticated) {
@@ -725,6 +746,14 @@ function AdminDashboardContent() {
               title="Reload live database values"
             >
               🔄 Refresh Data
+            </button>
+            <button
+              className="secondary-btn"
+              style={{ color: "#d97706", borderColor: "#fde68a" }}
+              onClick={() => setShowResetModal(true)}
+              title="Reset transient demo quotations & session data"
+            >
+              ⚡ Demo Reset
             </button>
             <button className="secondary-btn" onClick={() => navigate("/")}>
               View Live Site
@@ -1907,6 +1936,48 @@ function AdminDashboardContent() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* DEMO RESET CONFIRMATION MODAL */}
+      {showResetModal && (
+        <div className="admin-modal-overlay" onClick={() => setShowResetModal(false)}>
+          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "480px" }}>
+            <div className="modal-header">
+              <h3>⚡ Reset Demo Session State</h3>
+              <button className="modal-close-btn" onClick={() => setShowResetModal(false)}>✕</button>
+            </div>
+
+            <div className="modal-body" style={{ padding: "20px" }}>
+              <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                <span style={{ fontSize: "28px" }}>🧹</span>
+                <div>
+                  <h4 style={{ margin: "0 0 6px", color: "#0f172a" }}>Clear Transient Demo Data?</h4>
+                  <p style={{ margin: 0, color: "#64748b", fontSize: "13px", lineHeight: "1.5" }}>
+                    This will clear active on-site quotations, demo payments, and transient test states so you can run a clean SIH evaluation demonstration from scratch.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => setShowResetModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-btn"
+                style={{ background: "#dc2626", borderColor: "#dc2626" }}
+                onClick={handleResetDemoState}
+              >
+                Confirm & Reset Demo State
+              </button>
+            </div>
           </div>
         </div>
       )}

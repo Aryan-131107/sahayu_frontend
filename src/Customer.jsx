@@ -73,35 +73,69 @@ function Customer() {
     };
   }, [searchParams]);
 
-  // GPS Auto detection handler
-  const handleGpsAuto = () => {
+  // GPS Auto detection handler with Reverse Geocoding
+  const handleGpsAuto = async () => {
     setGpsDetecting(true);
     setGpsStatus("Detecting current coordinates...");
 
+    const reverseGeocode = async (lat, lon) => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`,
+          { signal: controller.signal }
+        );
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.display_name) {
+            // Simplify address to locality / road / city
+            const addr = data.address || {};
+            const road = addr.road || addr.suburb || addr.neighbourhood || "";
+            const city = addr.city || addr.town || addr.county || "Jabalpur";
+            const postcode = addr.postcode ? ` ${addr.postcode}` : "";
+            const formatted = road ? `${road}, ${city}${postcode}` : data.display_name.split(",").slice(0, 3).join(",");
+            return formatted || "Civil Lines, Jabalpur, MP";
+          }
+        }
+      } catch {
+        // Fallback below
+      }
+      return "Civil Lines, Jabalpur, Madhya Pradesh 482001";
+    };
+
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLatitude(Number(position.coords.latitude.toFixed(4)));
-          setLongitude(Number(position.coords.longitude.toFixed(4)));
-          setLocation("Detected Location (Jabalpur Central)");
-          setGpsStatus("✓ GPS Coordinates Locked");
+        async (position) => {
+          const lat = Number(position.coords.latitude.toFixed(4));
+          const lon = Number(position.coords.longitude.toFixed(4));
+          setLatitude(lat);
+          setLongitude(lon);
+          setGpsStatus("Resolving street address...");
+          const resolvedAddress = await reverseGeocode(lat, lon);
+          setLocation(resolvedAddress);
+          setGpsStatus(`✓ GPS Locked: ${resolvedAddress}`);
           setGpsDetecting(false);
         },
-        () => {
+        async () => {
           // Graceful simulated default for desktop / permission-denied browsers
-          setLatitude(23.1815);
-          setLongitude(79.9864);
-          setLocation("Civil Lines, Jabalpur");
-          setGpsStatus("✓ Auto-set to Jabalpur Center (23.1815° N, 79.9864° E)");
+          const lat = 23.1815;
+          const lon = 79.9864;
+          setLatitude(lat);
+          setLongitude(lon);
+          const resolvedAddress = await reverseGeocode(lat, lon);
+          setLocation(resolvedAddress);
+          setGpsStatus("✓ Auto-set to Jabalpur Center (Civil Lines)");
           setGpsDetecting(false);
         },
-        { timeout: 4000 }
+        { timeout: 5000 }
       );
     } else {
       setLatitude(23.1815);
       setLongitude(79.9864);
-      setLocation("Civil Lines, Jabalpur");
-      setGpsStatus("✓ Auto-set to Jabalpur Zone");
+      setLocation("Civil Lines, Jabalpur, Madhya Pradesh 482001");
+      setGpsStatus("✓ Auto-set to Jabalpur Center");
       setGpsDetecting(false);
     }
   };
@@ -261,6 +295,7 @@ function Customer() {
             <input
               type="date"
               value={preferredDate}
+              min={new Date().toISOString().split("T")[0]}
               onChange={(e) => setPreferredDate(e.target.value)}
               required
             />

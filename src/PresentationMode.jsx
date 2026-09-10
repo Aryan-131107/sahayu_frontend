@@ -8,6 +8,12 @@ import {
   verifyStartOtp,
   verifyEndOtp,
   getWorkers,
+  RATE_CARD_ITEMS,
+  getBookingQuotation,
+  saveBookingQuotation,
+  getBookingPayment,
+  saveBookingPayment,
+  completeBooking,
 } from "./api";
 import ServiceTimeline from "./ServiceTimeline";
 import WarrantyCountdown from "./WarrantyCountdown";
@@ -40,6 +46,15 @@ export default function PresentationMode() {
   const [verifyingStart, setVerifyingStart] = useState(false);
   const [verifyingEnd, setVerifyingEnd] = useState(false);
   const [acceptingJob, setAcceptingJob] = useState(false);
+
+  // Quotation & Payment State
+  const [, setQuoteVersion] = useState(0);
+  const [showQuoteBuilder, setShowQuoteBuilder] = useState(false);
+  const [selectedQuoteItems, setSelectedQuoteItems] = useState([]);
+  const [payingDemo, setPayingDemo] = useState(false);
+
+  const quotation = bookingId ? getBookingQuotation(bookingId) : null;
+  const paymentData = bookingId ? getBookingPayment(bookingId) : null;
 
   // Success Consensus State
   const [startSuccessData, setStartSuccessData] = useState(null);
@@ -297,6 +312,106 @@ export default function PresentationMode() {
     }
   };
 
+  const handleToggleQuoteItem = (item) => {
+    setSelectedQuoteItems((prev) => {
+      const exists = prev.find((i) => i.id === item.id);
+      if (exists) {
+        return prev.filter((i) => i.id !== item.id);
+      } else {
+        return [...prev, { ...item, qty: 1 }];
+      }
+    });
+  };
+
+  const handleUpdateQuoteQty = (itemId, delta) => {
+    setSelectedQuoteItems((prev) =>
+      prev
+        .map((i) => {
+          if (i.id === itemId) {
+            const newQty = Math.max(1, i.qty + delta);
+            return { ...i, qty: newQty };
+          }
+          return i;
+        })
+        .filter((i) => i.qty > 0)
+    );
+  };
+
+  const calculateQuoteAdditional = () => {
+    return selectedQuoteItems.reduce((acc, i) => acc + i.price * (i.qty || 1), 0);
+  };
+
+  const handleSubmitQuote = () => {
+    if (!booking) return;
+    const extraTotal = calculateQuoteAdditional();
+    if (extraTotal === 0) return;
+    const payload = {
+      booking_id: booking.booking_id,
+      items: selectedQuoteItems,
+      additional_amount: extraTotal,
+      total_with_base: 239 + extraTotal,
+      status: "PENDING_APPROVAL",
+      created_at: new Date().toISOString(),
+    };
+    saveBookingQuotation(booking.booking_id, payload);
+    setQuoteVersion((v) => v + 1);
+    setShowQuoteBuilder(false);
+  };
+
+  const handleCustomerApproveQuote = () => {
+    if (!booking || !quotation) return;
+    const updated = {
+      ...quotation,
+      status: "APPROVED",
+      approved_at: new Date().toISOString(),
+    };
+    saveBookingQuotation(booking.booking_id, updated);
+    setQuoteVersion((v) => v + 1);
+  };
+
+  const handleCustomerDeclineQuote = () => {
+    if (!booking || !quotation) return;
+    const updated = {
+      ...quotation,
+      status: "REJECTED",
+      rejected_at: new Date().toISOString(),
+    };
+    saveBookingQuotation(booking.booking_id, updated);
+    setQuoteVersion((v) => v + 1);
+  };
+
+  const calculatePayableTotal = () => {
+    const base = 239;
+    if (quotation && quotation.status === "APPROVED") {
+      return base + (quotation.additional_amount || 0);
+    }
+    return base;
+  };
+
+  const handleCustomerSimulatePayment = async () => {
+    if (!booking) return;
+    setPayingDemo(true);
+    try {
+      const finalAmount = calculatePayableTotal();
+      const pData = {
+        booking_id: booking.booking_id,
+        amount: finalAmount,
+        status: "PAID",
+        paid_at: new Date().toISOString(),
+      };
+      saveBookingPayment(booking.booking_id, pData);
+      setQuoteVersion((v) => v + 1);
+      try {
+        await completeBooking(booking.booking_id);
+      } catch (err) {
+        console.debug("Auto-complete fallback:", err);
+      }
+      await fetchAuthoritativeBooking(booking.booking_id, true);
+    } finally {
+      setPayingDemo(false);
+    }
+  };
+
   const normStatus = String(booking?.status || "PENDING").toUpperCase();
   const startOtpCode = booking?.start_otp || "4821";
   const endOtpCode = booking?.end_otp || "9134";
@@ -492,6 +607,46 @@ export default function PresentationMode() {
                   </div>
                 </div>
 
+                {/* ON-SITE INSPECTION & QUOTATION APPROVAL (CUSTOMER PERSPECTIVE) */}
+                {quotation && (
+                  <div className={`quotation-approval-card mini ${quotation.status === "PENDING_APPROVAL" ? "pending-review" : ""}`} style={{ marginBottom: "14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span className="quote-badge">INSPECTION QUOTATION</span>
+                      <span className={`status-badge ${quotation.status === "APPROVED" ? "green" : quotation.status === "REJECTED" ? "red" : "yellow"}`}>
+                        {quotation.status === "APPROVED" ? "✓ APPROVED" : quotation.status === "REJECTED" ? "✕ DECLINED" : "🔔 ACTION REQUIRED"}
+                      </span>
+                    </div>
+                    <p style={{ margin: "4px 0", fontSize: "12px", color: "#64748b" }}>
+                      Technician added: {quotation.items?.map(i => `${i.name} (x${i.qty})`).join(", ")}
+                    </p>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontWeight: 700, margin: "6px 0" }}>
+                      <span>Additional Parts / Labour:</span>
+                      <strong style={{ color: "#059669" }}>+₹{quotation.additional_amount}</strong>
+                    </div>
+
+                    {quotation.status === "PENDING_APPROVAL" && (
+                      <div style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
+                        <button
+                          type="button"
+                          className="primary-btn"
+                          style={{ flex: 1, padding: "6px 10px", fontSize: "11px" }}
+                          onClick={handleCustomerApproveQuote}
+                        >
+                          ✓ Approve (+₹{quotation.additional_amount})
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          style={{ flex: 1, padding: "6px 10px", fontSize: "11px" }}
+                          onClick={handleCustomerDeclineQuote}
+                        >
+                          ✕ Decline (Base Only)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* OTP Display Cards (Customer Perspective) */}
                 <div className="customer-handshake-box">
                   <div className="handshake-section-title">
@@ -550,11 +705,33 @@ export default function PresentationMode() {
 
                     <p className="pin-instruction">
                       {normStatus === "COMPLETED"
-                        ? "✓ Verified via Backend Consensus. ₹199 labour payout committed."
+                        ? "✓ Verified via Backend Consensus. Work validated."
                         : "Share this PIN ONLY after the repair work has been fully inspected and completed."}
                     </p>
                   </div>
                 </div>
+
+                {/* POST-COMPLETION PAYMENT MODAL IN PRESENTATION MODE */}
+                {normStatus === "COMPLETED" && (paymentData?.status !== "PAID" && booking?.payment_status !== "PAID") && (
+                  <div className="payment-pending-card mini" style={{ margin: "14px 0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <strong style={{ fontSize: "13px", color: "#0f172a" }}>💳 Final Payment Due</strong>
+                      <span className="status-badge yellow mini">₹{calculatePayableTotal()}</span>
+                    </div>
+                    <p style={{ fontSize: "11px", color: "#64748b", margin: "4px 0 8px" }}>
+                      Completion PIN verified. Settle total to disburse 100% floor & activate warranty.
+                    </p>
+                    <button
+                      type="button"
+                      className="primary-btn full-btn"
+                      style={{ background: "#059669", borderColor: "#059669", padding: "8px 12px", fontSize: "12px" }}
+                      onClick={handleCustomerSimulatePayment}
+                      disabled={payingDemo}
+                    >
+                      {payingDemo ? "Processing..." : `⚡ Demo Pay (₹${calculatePayableTotal()})`}
+                    </button>
+                  </div>
+                )}
 
                 {/* 3-Day Dynamic Warranty Countdown Component */}
                 <div style={{ marginTop: "16px" }}>
@@ -715,50 +892,123 @@ export default function PresentationMode() {
                     </div>
                   )}
 
-                  {/* STATE 3: IN_PROGRESS -> Enter Completion PIN */}
+                  {/* STATE 3: IN_PROGRESS -> On-Site Quotation Builder & Completion PIN */}
                   {normStatus === "IN_PROGRESS" && (
-                    <div className="terminal-step-box active-work">
-                      <div className="terminal-step-title">
-                        <span className="step-num">2</span>
-                        <div>
-                          <h4>Step 2: Service Completion Handshake</h4>
-                          <p>Once repair is completed & tested, enter customer's Completion PIN (Code: {endOtpCode}).</p>
+                    <div>
+                      {/* Interactive Rate Card Quotation Builder */}
+                      <div className="terminal-step-box" style={{ marginBottom: "14px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                          <h4 style={{ margin: 0, fontSize: "14px" }}>On-Site Inspection & Extra Parts</h4>
+                          {!quotation && !showQuoteBuilder && (
+                            <button
+                              type="button"
+                              className="secondary-btn mini-demo-btn"
+                              onClick={() => setShowQuoteBuilder(true)}
+                            >
+                              + Add Quote
+                            </button>
+                          )}
                         </div>
+
+                        {quotation && (
+                          <div className="active-quotation-summary mini" style={{ padding: "8px 10px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", fontWeight: 700 }}>
+                              <span>Quotation (+₹{quotation.additional_amount})</span>
+                              <span className={`status-badge mini ${quotation.status === "APPROVED" ? "green" : quotation.status === "REJECTED" ? "red" : "yellow"}`}>
+                                {quotation.status}
+                              </span>
+                            </div>
+                            <p style={{ margin: "4px 0 0", fontSize: "11px", color: "#64748b" }}>
+                              {quotation.items?.map(i => `${i.name} (x${i.qty})`).join(", ")}
+                            </p>
+                          </div>
+                        )}
+
+                        {showQuoteBuilder && (
+                          <div className="rate-card-builder-box mini" style={{ marginTop: "8px" }}>
+                            <small style={{ fontWeight: 700, display: "block", marginBottom: "6px" }}>Select Rate Card Items:</small>
+                            <div className="rate-items-grid" style={{ gridTemplateColumns: "1fr", gap: "6px" }}>
+                              {RATE_CARD_ITEMS.slice(0, 4).map((item) => {
+                                const selected = selectedQuoteItems.find((i) => i.id === item.id);
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className={`rate-item-card mini ${selected ? "selected" : ""}`}
+                                    onClick={() => handleToggleQuoteItem(item)}
+                                    style={{ padding: "6px 8px", cursor: "pointer", border: "1px solid #cbd5e1", borderRadius: "6px", background: selected ? "#ecfdf5" : "#fff" }}
+                                  >
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
+                                      <span>{item.name}</span>
+                                      <strong>+₹{item.price}</strong>
+                                    </div>
+                                    {selected && (
+                                      <div className="qty-selector mini" onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "4px" }}>
+                                        <small>Qty:</small>
+                                        <button type="button" className="qty-btn" onClick={() => handleUpdateQuoteQty(item.id, -1)}>-</button>
+                                        <span style={{ fontSize: "12px" }}>{selected.qty}</span>
+                                        <button type="button" className="qty-btn" onClick={() => handleUpdateQuoteQty(item.id, 1)}>+</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px" }}>
+                              <strong style={{ fontSize: "12px", color: "#059669" }}>Subtotal: +₹{calculateQuoteAdditional()}</strong>
+                              <div style={{ display: "flex", gap: "6px" }}>
+                                <button type="button" className="secondary-btn mini-demo-btn" onClick={() => setShowQuoteBuilder(false)}>Cancel</button>
+                                <button type="button" className="primary-btn mini-demo-btn" onClick={handleSubmitQuote} disabled={selectedQuoteItems.length === 0}>Submit</button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
-                      <form
-                        onSubmit={handleVerifyEndPin}
-                        className={`terminal-form ${shakeEnd ? "shake-anim" : ""}`}
-                      >
-                        <div className="form-group">
-                          <label>Enter Customer's Completion PIN:</label>
-                          <input
-                            type="text"
-                            maxLength={4}
-                            placeholder="e.g. 9134"
-                            value={enteredEndOtp}
-                            onChange={(e) => setEnteredEndOtp(e.target.value.replace(/\D/g, ""))}
-                            disabled={verifyingEnd || booking?.is_end_otp_locked}
-                            className="terminal-otp-input"
-                            autoComplete="off"
-                            required
-                          />
+                      {/* Completion PIN Action Box */}
+                      <div className="terminal-step-box active-work">
+                        <div className="terminal-step-title">
+                          <span className="step-num">2</span>
+                          <div>
+                            <h4>Step 2: Service Completion Handshake</h4>
+                            <p>Once repair is completed & tested, enter customer's Completion PIN (Code: {endOtpCode}).</p>
+                          </div>
                         </div>
 
-                        <button
-                          type="submit"
-                          className="primary-btn full-btn"
-                          disabled={verifyingEnd || booking?.is_end_otp_locked}
+                        <form
+                          onSubmit={handleVerifyEndPin}
+                          className={`terminal-form ${shakeEnd ? "shake-anim" : ""}`}
                         >
-                          {verifyingEnd ? "⟳ Verifying Completion PIN..." : "Verify Completion PIN"}
-                        </button>
-                      </form>
+                          <div className="form-group">
+                            <label>Enter Customer's Completion PIN:</label>
+                            <input
+                              type="text"
+                              maxLength={4}
+                              placeholder="e.g. 9134"
+                              value={enteredEndOtp}
+                              onChange={(e) => setEnteredEndOtp(e.target.value.replace(/\D/g, ""))}
+                              disabled={verifyingEnd || booking?.is_end_otp_locked}
+                              className="terminal-otp-input"
+                              autoComplete="off"
+                              required
+                            />
+                          </div>
 
-                      {booking?.is_end_otp_locked && (
-                        <p style={{ color: "#ef4444", fontSize: "12px", marginTop: "8px", fontWeight: 700 }}>
-                          ✕ Maximum verification attempts reached. Completion PIN locked.
-                        </p>
-                      )}
+                          <button
+                            type="submit"
+                            className="primary-btn full-btn"
+                            disabled={verifyingEnd || booking?.is_end_otp_locked}
+                          >
+                            {verifyingEnd ? "⟳ Verifying Completion PIN..." : "Verify Completion PIN"}
+                          </button>
+                        </form>
+
+                        {booking?.is_end_otp_locked && (
+                          <p style={{ color: "#ef4444", fontSize: "12px", marginTop: "8px", fontWeight: 700 }}>
+                            ✕ Maximum verification attempts reached. Completion PIN locked.
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -789,10 +1039,16 @@ export default function PresentationMode() {
                           <span>Cooperative Gullak Sinking Fund:</span>
                           <strong style={{ color: "#d97706" }}>+₹10.00</strong>
                         </div>
+                        {quotation && quotation.status === "APPROVED" && (
+                          <div className="payout-row" style={{ color: "#059669" }}>
+                            <span>Approved Extra Labour / Parts:</span>
+                            <strong>+₹{quotation.additional_amount}.00</strong>
+                          </div>
+                        )}
                         <div className="payout-divider"></div>
                         <div className="payout-row total">
                           <span>Total Customer Billing:</span>
-                          <strong>₹239.00</strong>
+                          <strong>₹{calculatePayableTotal()}.00</strong>
                         </div>
                       </div>
 

@@ -288,6 +288,53 @@ export const setStoredVerification = (workerId, data) => {
   }
 };
 
+// Quotation Management (On-Site Inspection & Additional Work)
+export const RATE_CARD_ITEMS = [
+  { id: "cap_rep", name: "Capacitor Replacement", price: 150, category: "Electrical" },
+  { id: "mot_rew", name: "Motor Rewinding / Coil Repair", price: 350, category: "Electrical" },
+  { id: "sw_soc", name: "Modular Switch & Socket Replacement", price: 120, category: "Electrical" },
+  { id: "mcb_rep", name: "Heavy Duty MCB Breaker Replacement", price: 280, category: "Electrical" },
+  { id: "pipe_seal", name: "Copper / PVC Pipe Joint Seal", price: 180, category: "Plumbing" },
+  { id: "valv_rep", name: "Brass Gate Valve Replacement", price: 220, category: "Plumbing" },
+  { id: "drn_clog", name: "Chemical Drain Declogging & Trap Cleaning", price: 160, category: "Plumbing" },
+  { id: "wire_patch", name: "Conduit Wire Routing & Patching (per 5m)", price: 140, category: "Electrical" },
+];
+
+export const getBookingQuotation = (bookingId) => {
+  try {
+    const raw = localStorage.getItem(`sahayu_quotation_${bookingId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveBookingQuotation = (bookingId, quoteData) => {
+  try {
+    localStorage.setItem(`sahayu_quotation_${bookingId}`, JSON.stringify(quoteData));
+  } catch {
+    // Ignore localStorage errors
+  }
+};
+
+// Post-Completion Payment State Management
+export const getBookingPayment = (bookingId) => {
+  try {
+    const raw = localStorage.getItem(`sahayu_payment_${bookingId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveBookingPayment = (bookingId, paymentData) => {
+  try {
+    localStorage.setItem(`sahayu_payment_${bookingId}`, JSON.stringify(paymentData));
+  } catch {
+    // Ignore localStorage errors
+  }
+};
+
 // Admin and Gullak APIs
 export const getAdminStats = () => request("/admin/stats");
 export const getAdminPayments = () => request("/admin/payments");

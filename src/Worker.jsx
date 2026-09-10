@@ -10,6 +10,9 @@ import {
   verifyStartOtp,
   verifyEndOtp,
   getStoredVerification,
+  RATE_CARD_ITEMS,
+  getBookingQuotation,
+  saveBookingQuotation,
 } from "./api";
 import WarrantyCountdown from "./WarrantyCountdown";
 import "./App.css";
@@ -36,6 +39,14 @@ function Worker() {
   const [shakeStart, setShakeStart] = useState(false);
   const [shakeEnd, setShakeEnd] = useState(false);
   const [consensusSuccess, setConsensusSuccess] = useState(null);
+
+  // Quotation Builder State (On-Site Inspection)
+  const [, setQuoteVersion] = useState(0);
+  const [showQuoteBuilder, setShowQuoteBuilder] = useState(false);
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [quoteSuccessMsg, setQuoteSuccessMsg] = useState("");
+
+  const quotation = activeJob?.booking_id ? getBookingQuotation(activeJob.booking_id) : null;
 
   // OTP inputs for starting and ending service
   const [enteredStartOtp, setEnteredStartOtp] = useState("");
@@ -264,6 +275,65 @@ function Worker() {
     } finally {
       setVerifyingEnd(false);
     }
+  };
+
+  const handleToggleItemInQuote = (item) => {
+    setSelectedItems((prev) => {
+      const exists = prev.find((i) => i.id === item.id);
+      if (exists) {
+        return prev.filter((i) => i.id !== item.id);
+      } else {
+        return [...prev, { ...item, qty: 1 }];
+      }
+    });
+  };
+
+  const handleUpdateItemQty = (itemId, delta) => {
+    setSelectedItems((prev) =>
+      prev
+        .map((i) => {
+          if (i.id === itemId) {
+            const newQty = Math.max(1, i.qty + delta);
+            return { ...i, qty: newQty };
+          }
+          return i;
+        })
+        .filter((i) => i.qty > 0)
+    );
+  };
+
+  const calculateAdditionalTotal = () => {
+    return selectedItems.reduce((acc, item) => acc + item.price * (item.qty || 1), 0);
+  };
+
+  const handleSubmitQuotation = () => {
+    if (!activeJob) return;
+    if (selectedItems.length === 0) {
+      alert("Please select at least one additional item/part to create a quotation.");
+      return;
+    }
+    const extraTotal = calculateAdditionalTotal();
+    const payload = {
+      booking_id: activeJob.booking_id,
+      items: selectedItems,
+      additional_amount: extraTotal,
+      total_with_base: 239 + extraTotal,
+      status: "PENDING_APPROVAL",
+      created_at: new Date().toISOString(),
+    };
+    saveBookingQuotation(activeJob.booking_id, payload);
+    setQuoteVersion((v) => v + 1);
+    setShowQuoteBuilder(false);
+    setQuoteSuccessMsg("✓ Additional work quotation submitted to customer for live approval!");
+    setTimeout(() => setQuoteSuccessMsg(""), 5000);
+  };
+
+  const handleCancelQuotation = () => {
+    if (!activeJob) return;
+    saveBookingQuotation(activeJob.booking_id, null);
+    setQuoteVersion((v) => v + 1);
+    setSelectedItems([]);
+    setShowQuoteBuilder(false);
   };
 
   const formatTime = (isoString) => {
@@ -570,34 +640,209 @@ function Worker() {
                   </div>
                 )}
 
-                {/* Status: IN_PROGRESS -> Worker finishes work, enters End OTP */}
+                {/* Status: IN_PROGRESS -> On-Site Inspection, Additional Quotation, and End OTP */}
                 {activeJob.status === "IN_PROGRESS" && (
-                  <div className="job-step-action-box in-progress-box">
-                    <div className="otp-action-header">
-                      <strong>🔒 Step 2: Enter Completion PIN (Customer Code: {activeJob.end_otp || "9134"})</strong>
-                      <p>Once the repair is done and verified with the customer, enter their Completion PIN to complete the job and disburse payment.</p>
+                  <div>
+                    {quoteSuccessMsg && (
+                      <div className="admin-toast-success" style={{ marginBottom: "14px" }}>
+                        {quoteSuccessMsg}
+                      </div>
+                    )}
+
+                    {/* On-Site Inspection & Quotation Card */}
+                    <div className="quotation-panel-card" style={{ marginBottom: "20px" }}>
+                      <div className="quotation-panel-header">
+                        <div>
+                          <span className="quote-badge">ON-SITE INSPECTION</span>
+                          <h4>Additional Work Quotation (Optional)</h4>
+                          <p>
+                            If parts replacement or extra labour is required beyond the ₹239 base inspection, select items from the cooperative rate card for customer approval.
+                          </p>
+                        </div>
+
+                        {!quotation && !showQuoteBuilder && (
+                          <button
+                            type="button"
+                            className="secondary-btn"
+                            onClick={() => setShowQuoteBuilder(true)}
+                          >
+                            + Add Extra Parts / Labour
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Active Quotation Display */}
+                      {quotation && (
+                        <div className="active-quotation-summary">
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                            <strong>Quotation #{quotation.booking_id} Breakdown</strong>
+                            <span
+                              className={`status-badge ${
+                                quotation.status === "APPROVED"
+                                  ? "green"
+                                  : quotation.status === "REJECTED"
+                                  ? "red"
+                                  : "yellow"
+                              }`}
+                            >
+                              {quotation.status === "APPROVED"
+                                ? "✓ APPROVED BY CUSTOMER"
+                                : quotation.status === "REJECTED"
+                                ? "✕ DECLINED (BASE WORK ONLY)"
+                                : "⏳ AWAITING CUSTOMER APPROVAL"}
+                            </span>
+                          </div>
+
+                          <div className="quote-items-table">
+                            {quotation.items?.map((item, idx) => (
+                              <div key={idx} className="quote-item-row">
+                                <span>{item.name} × {item.qty}</span>
+                                <strong>₹{item.price * item.qty}</strong>
+                              </div>
+                            ))}
+                            <div className="quote-item-row" style={{ borderTop: "1px dashed #cbd5e1", paddingTop: "6px" }}>
+                              <span>Base Inspection & Service Floor:</span>
+                              <strong>₹239</strong>
+                            </div>
+                            <div className="quote-item-row quote-total-row">
+                              <span>Total Service Amount:</span>
+                              <strong style={{ color: "#059669", fontSize: "16px" }}>
+                                ₹{quotation.status === "APPROVED" ? quotation.total_with_base : 239}
+                              </strong>
+                            </div>
+                          </div>
+
+                          {quotation.status === "PENDING_APPROVAL" && (
+                            <div style={{ marginTop: "10px", display: "flex", gap: "10px", alignItems: "center" }}>
+                              <small style={{ color: "#d97706" }}>
+                                🔔 Waiting for customer to approve in their Sahāyu app...
+                              </small>
+                              <button
+                                type="button"
+                                className="text-btn"
+                                style={{ color: "#ef4444", fontSize: "12px", marginLeft: "auto" }}
+                                onClick={handleCancelQuotation}
+                              >
+                                Cancel Quote
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Interactive Rate Card Quotation Builder */}
+                      {showQuoteBuilder && (
+                        <div className="rate-card-builder-box">
+                          <h5 style={{ margin: "0 0 8px", fontSize: "14px", color: "#0f172a" }}>
+                            Select Cooperative-Approved Rate Card Items:
+                          </h5>
+                          <div className="rate-items-grid">
+                            {RATE_CARD_ITEMS.map((item) => {
+                              const selected = selectedItems.find((i) => i.id === item.id);
+                              return (
+                                <div
+                                  key={item.id}
+                                  className={`rate-item-card ${selected ? "selected" : ""}`}
+                                  onClick={() => handleToggleItemInQuote(item)}
+                                >
+                                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                                    <strong>{item.name}</strong>
+                                    <span className="rate-price">₹{item.price}</span>
+                                  </div>
+                                  <small style={{ color: "#64748b" }}>{item.category}</small>
+
+                                  {selected && (
+                                    <div
+                                      className="qty-selector"
+                                      onClick={(e) => e.stopPropagation()}
+                                      style={{ marginTop: "6px", display: "flex", alignItems: "center", gap: "8px" }}
+                                    >
+                                      <small>Qty:</small>
+                                      <button
+                                        type="button"
+                                        className="qty-btn"
+                                        onClick={() => handleUpdateItemQty(item.id, -1)}
+                                      >
+                                        -
+                                      </button>
+                                      <span>{selected.qty}</span>
+                                      <button
+                                        type="button"
+                                        className="qty-btn"
+                                        onClick={() => handleUpdateItemQty(item.id, 1)}
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div className="quote-calc-footer">
+                            <div>
+                              <span>Additional Work Subtotal: </span>
+                              <strong style={{ color: "#059669", fontSize: "16px" }}>
+                                +₹{calculateAdditionalTotal()}
+                              </strong>
+                              <small style={{ display: "block", color: "#64748b" }}>
+                                Total with ₹239 base: ₹{239 + calculateAdditionalTotal()}
+                              </small>
+                            </div>
+
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              <button
+                                type="button"
+                                className="secondary-btn"
+                                onClick={() => setShowQuoteBuilder(false)}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                className="primary-btn"
+                                onClick={handleSubmitQuotation}
+                                disabled={selectedItems.length === 0}
+                              >
+                                Submit Quote for Approval →
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    <form onSubmit={handleCompleteJob} className={`otp-inline-form ${shakeEnd ? "shake-anim" : ""}`}>
-                      <input
-                        type="text"
-                        maxLength={4}
-                        placeholder="Enter 4-digit Completion PIN (e.g. 9134)"
-                        value={enteredEndOtp}
-                        onChange={(e) => setEnteredEndOtp(e.target.value.replace(/\D/g, ""))}
-                        disabled={verifyingEnd}
-                        className="form-control otp-input"
-                        autoComplete="off"
-                        required
-                      />
-                      <button
-                        type="submit"
-                        className="primary-btn"
-                        disabled={verifyingEnd}
-                      >
-                        {verifyingEnd ? "⟳ Verifying Completion PIN..." : "Verify Completion PIN"}
-                      </button>
-                    </form>
+                    {/* Step 2: Completion PIN Handshake Form */}
+                    <div className="job-step-action-box in-progress-box">
+                      <div className="otp-action-header">
+                        <strong>🔒 Step 2: Enter Completion PIN (Customer Code: {activeJob.end_otp || "9134"})</strong>
+                        <p>
+                          Once all physical work is finished and verified by customer, enter their Completion PIN to validate completion.
+                        </p>
+                      </div>
+
+                      <form onSubmit={handleCompleteJob} className={`otp-inline-form ${shakeEnd ? "shake-anim" : ""}`}>
+                        <input
+                          type="text"
+                          maxLength={4}
+                          placeholder="Enter 4-digit Completion PIN (e.g. 9134)"
+                          value={enteredEndOtp}
+                          onChange={(e) => setEnteredEndOtp(e.target.value.replace(/\D/g, ""))}
+                          disabled={verifyingEnd}
+                          className="form-control otp-input"
+                          autoComplete="off"
+                          required
+                        />
+                        <button
+                          type="submit"
+                          className="primary-btn"
+                          disabled={verifyingEnd}
+                        >
+                          {verifyingEnd ? "⟳ Verifying Completion PIN..." : "Verify Completion PIN"}
+                        </button>
+                      </form>
+                    </div>
                   </div>
                 )}
 

@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
-import { getBooking, cancelBooking as cancelBookingApi, createReview } from "./api";
+import {
+  getBooking,
+  cancelBooking as cancelBookingApi,
+  createReview,
+  getBookingQuotation,
+  saveBookingQuotation,
+  getBookingPayment,
+  saveBookingPayment,
+  completeBooking,
+} from "./api";
 import ServiceTimeline from "./ServiceTimeline";
 import ServiceMap from "./ServiceMap";
 import WarrantyCountdown from "./WarrantyCountdown";
@@ -27,6 +36,14 @@ function MyBookings() {
       ? `Booking Reference #${location.state.newBookingId} created successfully!`
       : ""
   );
+
+  // Quotation & Payment State Trigger
+  const [, setQuoteVersion] = useState(0);
+  const [payingDemo, setPayingDemo] = useState(false);
+  const [paymentSuccessToast, setPaymentSuccessToast] = useState("");
+
+  const quotation = booking?.booking_id ? getBookingQuotation(booking.booking_id) : null;
+  const paymentData = booking?.booking_id ? getBookingPayment(booking.booking_id) : null;
 
   // Review Form State
   const [rating, setRating] = useState(5);
@@ -129,6 +146,77 @@ function MyBookings() {
       setReviewError(err.message || "Review could not be submitted.");
     } finally {
       setSubmittingReview(false);
+    }
+  };
+
+  const handleApproveQuotation = () => {
+    if (!booking || !quotation) return;
+    const updated = {
+      ...quotation,
+      status: "APPROVED",
+      approved_at: new Date().toISOString(),
+    };
+    saveBookingQuotation(booking.booking_id, updated);
+    setQuoteVersion((v) => v + 1);
+    setSuccessMessage(`✓ Additional work quotation of ₹${quotation.additional_amount} approved! Total service fee updated to ₹${239 + quotation.additional_amount}.`);
+  };
+
+  const handleDeclineQuotation = () => {
+    if (!booking || !quotation) return;
+    const updated = {
+      ...quotation,
+      status: "REJECTED",
+      rejected_at: new Date().toISOString(),
+    };
+    saveBookingQuotation(booking.booking_id, updated);
+    setQuoteVersion((v) => v + 1);
+    setSuccessMessage(`Quotation declined. Proceeding with base inspection service only (₹239).`);
+  };
+
+  const calculateFinalPayableAmount = () => {
+    const base = 239;
+    if (quotation && quotation.status === "APPROVED") {
+      return base + (quotation.additional_amount || 0);
+    }
+    return base;
+  };
+
+  const handleSimulatePayment = async () => {
+    if (!booking) return;
+    setPayingDemo(true);
+    setError("");
+
+    try {
+      const finalAmount = calculateFinalPayableAmount();
+      const pData = {
+        booking_id: booking.booking_id,
+        amount: finalAmount,
+        status: "PAID",
+        payment_method: "COOPERATIVE_INSTANT_SETTLEMENT",
+        paid_at: new Date().toISOString(),
+      };
+      saveBookingPayment(booking.booking_id, pData);
+      setQuoteVersion((v) => v + 1);
+
+      // Trigger backend completion if not already marked
+      try {
+        await completeBooking(booking.booking_id);
+      } catch {
+        // Backend may already be marked via OTP
+      }
+
+      const freshBooking = await getBooking(booking.booking_id);
+      setBooking({
+        ...freshBooking,
+        payment_status: "PAID",
+        status: "COMPLETED",
+      });
+
+      setPaymentSuccessToast(`✓ Payment of ₹${finalAmount} settled! 100% labour floor disbursed to ${booking.worker_name || 'Worker'} & 72-Hour Warranty Activated.`);
+    } catch (err) {
+      setError(err.message || "Payment simulation failed.");
+    } finally {
+      setPayingDemo(false);
     }
   };
 
@@ -251,16 +339,98 @@ function MyBookings() {
 
         {booking && (
           <>
+            {paymentSuccessToast && (
+              <div className="admin-toast-success" style={{ marginBottom: "20px" }}>
+                {paymentSuccessToast}
+              </div>
+            )}
+
             {/* 1. 🚗 PROGRESS TIMELINE (BOOKED -> ARRIVED -> IN PROGRESS -> COMPLETED -> WARRANTY ACTIVE) */}
             <ServiceTimeline
               status={booking.status}
               bookingDate={booking.booking_date}
-              amount={booking.amount || 239}
+              amount={calculateFinalPayableAmount()}
               startOtpVerifiedAt={booking.start_otp_verified_at}
               endOtpVerifiedAt={booking.end_otp_verified_at}
               warrantyExpiresAt={booking.warranty_expires_at}
               bookingReference={booking.booking_reference}
             />
+
+            {/* ON-SITE INSPECTION & ADDITIONAL QUOTATION APPROVAL CARD */}
+            {quotation && (
+              <div
+                className={`quotation-approval-card ${
+                  quotation.status === "PENDING_APPROVAL" ? "pending-review" : ""
+                }`}
+                style={{ marginBottom: "25px" }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "10px" }}>
+                  <div>
+                    <span className="quote-badge">ON-SITE INSPECTION REPORT</span>
+                    <h3 style={{ margin: "4px 0 2px", fontSize: "17px", color: "#0f172a" }}>
+                      Additional Work Quotation
+                    </h3>
+                    <p style={{ margin: 0, color: "#64748b", fontSize: "13px" }}>
+                      Your technician has inspected the site and proposed the following required parts / repairs:
+                    </p>
+                  </div>
+
+                  <span
+                    className={`status-badge ${
+                      quotation.status === "APPROVED"
+                        ? "green"
+                        : quotation.status === "REJECTED"
+                        ? "red"
+                        : "yellow"
+                    }`}
+                  >
+                    {quotation.status === "APPROVED"
+                      ? "✓ APPROVED BY YOU"
+                      : quotation.status === "REJECTED"
+                      ? "✕ DECLINED (BASE ONLY)"
+                      : "🔔 ACTION REQUIRED"}
+                  </span>
+                </div>
+
+                <div className="quote-items-table" style={{ marginTop: "12px" }}>
+                  {quotation.items?.map((item, idx) => (
+                    <div key={idx} className="quote-item-row">
+                      <span>{item.name} × {item.qty}</span>
+                      <strong>₹{item.price * item.qty}</strong>
+                    </div>
+                  ))}
+                  <div className="quote-item-row" style={{ borderTop: "1px dashed #cbd5e1", paddingTop: "6px" }}>
+                    <span>Initial Inspection Floor:</span>
+                    <span>₹239</span>
+                  </div>
+                  <div className="quote-item-row quote-total-row">
+                    <span>Final Amount Payable After Job:</span>
+                    <strong style={{ color: "#059669", fontSize: "16px" }}>
+                      ₹{quotation.status === "APPROVED" ? 239 + quotation.additional_amount : 239}
+                    </strong>
+                  </div>
+                </div>
+
+                {quotation.status === "PENDING_APPROVAL" && (
+                  <div className="quote-actions-row" style={{ marginTop: "15px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="primary-btn"
+                      onClick={handleApproveQuotation}
+                    >
+                      ✓ Approve Quotation (Total: ₹{239 + quotation.additional_amount})
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-btn"
+                      onClick={handleDeclineQuotation}
+                    >
+                      ✕ Decline (Proceed with Base ₹239 Inspection Only)
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 2. 🔐 OTP VERIFICATION CONCEPT (START & END OTP) */}
             {booking.status !== "CANCELLED" && (
@@ -292,9 +462,66 @@ function MyBookings() {
                   </p>
                   <small className="otp-sub-note">
                     {booking.status === "completed" || booking.status === "COMPLETED"
-                      ? "✓ Completion PIN verified & ₹199 labour settled"
+                      ? "✓ Completion PIN verified & work signed off"
                       : "Ensures satisfaction before payment disbursement."}
                   </small>
+                </div>
+              </div>
+            )}
+
+            {/* 💳 INTERACTIVE POST-COMPLETION PAYMENT STEP */}
+            {booking.status === "COMPLETED" && (booking.payment_status !== "PAID" && paymentData?.status !== "PAID") && (
+              <div className="payment-pending-card" style={{ marginBottom: "25px" }}>
+                <div className="payment-card-header">
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ fontSize: "28px" }}>💳</span>
+                    <div>
+                      <h3 style={{ margin: 0, color: "#0f172a" }}>Payment Pending (Job Completed)</h3>
+                      <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: "13px" }}>
+                        Work has been validated via Completion PIN. Please settle the total fee to disburse 100% labour floor to worker and activate your warranty.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="status-badge yellow">PAYMENT DUE</span>
+                </div>
+
+                <div className="invoice-preview-box" style={{ margin: "16px 0" }}>
+                  <div className="invoice-line-items">
+                    <div className="invoice-row">
+                      <span>Worker Base Inspection & Labour Floor (100%):</span>
+                      <strong>₹199</strong>
+                    </div>
+                    <div className="invoice-row">
+                      <span>Platform Tech Fee:</span>
+                      <strong>₹30</strong>
+                    </div>
+                    <div className="invoice-row">
+                      <span>Cooperative Welfare (Gullak Pool):</span>
+                      <strong>₹10</strong>
+                    </div>
+                    {quotation && quotation.status === "APPROVED" && (
+                      <div className="invoice-row" style={{ color: "#059669" }}>
+                        <span>Approved Additional Work ({quotation.items?.map(i => i.name).join(", ")}):</span>
+                        <strong>+₹{quotation.additional_amount}</strong>
+                      </div>
+                    )}
+                    <div className="invoice-row total-row">
+                      <span>Total Payable:</span>
+                      <strong className="total-highlight">₹{calculateFinalPayableAmount()}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ textAlign: "right" }}>
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    style={{ background: "#059669", borderColor: "#059669", fontSize: "15px", padding: "12px 24px" }}
+                    onClick={handleSimulatePayment}
+                    disabled={payingDemo}
+                  >
+                    {payingDemo ? "Processing Settlement..." : `⚡ Demo Pay (Simulate Successful Payment of ₹${calculateFinalPayableAmount()})`}
+                  </button>
                 </div>
               </div>
             )}
