@@ -4948,22 +4948,27 @@ footer > p {
    ========================================================================== */
 
 .presentation-page {
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
   background: #0f172a;
   color: #f8fafc;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  position: relative;
 }
 
 .presentation-topbar {
   background: #1e293b;
   border-bottom: 1px solid #334155;
-  padding: 14px 24px;
+  padding: 12px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 14px;
+  gap: 12px;
+  flex-shrink: 0;
+  z-index: 20;
 }
 
 .topbar-left {
@@ -5054,13 +5059,15 @@ footer > p {
 .demo-state-ribbon {
   background: #1e293b;
   border-bottom: 1px solid #334155;
-  padding: 10px 24px;
+  padding: 8px 24px;
   display: flex;
   align-items: center;
   justify-content: space-around;
   flex-wrap: wrap;
   gap: 16px;
   font-size: 12px;
+  flex-shrink: 0;
+  z-index: 10;
 }
 
 .ribbon-item {
@@ -5075,46 +5082,76 @@ footer > p {
   font-size: 11px;
 }
 
-/* Presentation Container & Split Screen Grid */
+/* Presentation Container & Independent Split Screen Grid */
 .presentation-container {
   flex: 1;
-  padding: 24px;
-  max-width: 1440px;
+  min-height: 0;
+  padding: 16px 24px;
+  max-width: 1560px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .dual-device-grid {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  gap: 20px;
+  overflow: hidden;
 }
 
 @media (max-width: 960px) {
+  .presentation-page {
+    height: auto;
+    max-height: none;
+    overflow-y: auto;
+  }
+
+  .presentation-container {
+    height: auto;
+    overflow: visible;
+    padding: 14px;
+  }
+
   .dual-device-grid {
     grid-template-columns: 1fr;
+    height: auto;
+    gap: 20px;
+  }
+
+  .device-frame {
+    height: 560px;
+    max-height: 80vh;
   }
 }
 
 .device-frame {
   background: #ffffff;
   color: #0f172a;
-  border-radius: 20px;
+  border-radius: 16px;
   border: 1px solid #334155;
-  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
 .device-header {
-  padding: 16px 20px;
+  padding: 12px 18px;
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 
 .device-persona-badge {
@@ -5144,10 +5181,33 @@ footer > p {
 }
 
 .device-content {
-  padding: 20px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 18px 18px 48px 18px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.device-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.device-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.device-content::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 6px;
+}
+
+.device-content::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
 }
 
 .device-order-card {
@@ -5902,5 +5962,77 @@ footer > p {
 .voice-retry-btn:hover {
   background: #fee2e2;
 }
+
+/* ==================================================
+   Realistic Loading State Spinners & Toast Banners
+   ================================================== */
+.btn-inline-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.btn-inline-spinner.dark {
+  border-color: rgba(30, 41, 59, 0.2);
+  border-top-color: #0f172a;
+}
+
+.demo-toast-banner {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #ffffff;
+  border: 1px solid #334155;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 100;
+  animation: slideDownToast 0.3s ease-out;
+}
+
+@keyframes slideDownToast {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ==================================================
+   Worker UPI Payment QR Card Styles
+   ================================================== */
+.worker-upi-payment-card {
+  text-align: center;
+}
+
+.demo-qr-container {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  padding: 14px;
+  border-radius: 14px;
+  border: 2px solid #059669;
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.15);
+  margin-bottom: 12px;
+}
+
 
 

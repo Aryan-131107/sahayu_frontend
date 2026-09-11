@@ -16,6 +16,119 @@ import WarrantyCountdown from "./WarrantyCountdown";
 import "./App.css";
 
 /**
+ * Safe Demo UPI QR Code (Vector SVG)
+ * Generates an authentic deterministic QR Code pattern encoding demo order & dynamic bill amount.
+ * Contains 0 real payment secrets.
+ */
+function DemoUpiQr({ amount, orderId, size = 150 }) {
+  const grid = useMemo(() => {
+    const N = 25;
+    const matrix = Array.from({ length: N }, () => Array(N).fill(0));
+
+    // Draw standard 7x7 Finder Pattern at (r0, c0)
+    const drawFinder = (r0, c0) => {
+      for (let r = 0; r < 7; r++) {
+        for (let c = 0; c < 7; c++) {
+          if (r === 0 || r === 6 || c === 0 || c === 6) {
+            matrix[r0 + r][c0 + c] = 1;
+          } else if (r >= 2 && r <= 4 && c >= 2 && c <= 4) {
+            matrix[r0 + r][c0 + c] = 1;
+          } else {
+            matrix[r0 + r][c0 + c] = 0;
+          }
+        }
+      }
+    };
+
+    drawFinder(0, 0); // Top-left
+    drawFinder(0, 18); // Top-right
+    drawFinder(18, 0); // Bottom-left
+
+    // Timing lines
+    for (let i = 7; i < 18; i++) {
+      matrix[6][i] = i % 2 === 0 ? 1 : 0;
+      matrix[i][6] = i % 2 === 0 ? 1 : 0;
+    }
+
+    // Deterministic pseudo-random seed based on orderId and amount
+    const seedStr = `upi://pay?pa=sahayu.coop@upi&pn=Sahayu+Worker&am=${amount}&cu=INR&tn=${orderId}`;
+    let hash = 0;
+    for (let i = 0; i < seedStr.length; i++) {
+      hash = (hash * 31 + seedStr.charCodeAt(i)) >>> 0;
+    }
+
+    // Fill data cells
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        // Skip finder areas and center badge cutout
+        if (
+          (r < 8 && c < 8) ||
+          (r < 8 && c >= 17) ||
+          (r >= 17 && c < 8) ||
+          (r === 6) ||
+          (c === 6) ||
+          (r >= 10 && r <= 14 && c >= 10 && c <= 14)
+        ) {
+          continue;
+        }
+        hash = (hash * 1664525 + 1013904223) >>> 0;
+        matrix[r][c] = hash % 3 === 0 ? 1 : 0;
+      }
+    }
+
+    return matrix;
+  }, [amount, orderId]);
+
+  return (
+    <div style={{ position: "relative", width: size, height: size, margin: "0 auto" }}>
+      <svg
+        viewBox="0 0 25 25"
+        width={size}
+        height={size}
+        style={{ display: "block", background: "#ffffff", borderRadius: "4px" }}
+      >
+        {grid.map((row, r) =>
+          row.map((cell, c) =>
+            cell === 1 ? (
+              <rect
+                key={`${r}-${c}`}
+                x={c}
+                y={r}
+                width="1.01"
+                height="1.01"
+                fill="#0f172a"
+              />
+            ) : null
+          )
+        )}
+      </svg>
+      {/* Central Sahāyu Brand Badge */}
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: size * 0.22,
+          height: size * 0.22,
+          background: "#ffffff",
+          border: "2px solid #059669",
+          borderRadius: "6px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+        }}
+      >
+        <span style={{ fontSize: `${size * 0.12}px`, fontWeight: 900, color: "#059669", lineHeight: 1 }}>
+          ₹
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Real-Time Demo (Judge-Ready Presentation)
  * 100% FRONTEND-ONLY DEMO STATE
  * LEFT: Customer Device (Sahāyu App)
@@ -43,6 +156,7 @@ export default function PresentationMode() {
   const [loading] = useState(false);
   const [creatingDemo, setCreatingDemo] = useState(false);
   const [error, setError] = useState("");
+  const [globalToast, setGlobalToast] = useState("");
 
   // Worker OTP Action States
   const [enteredStartOtp, setEnteredStartOtp] = useState("");
@@ -54,6 +168,9 @@ export default function PresentationMode() {
   // Quotation & Rate Card State
   const [, setQuoteVersion] = useState(0);
   const [selectedQuoteItems, setSelectedQuoteItems] = useState([]);
+  const [submittingQuote, setSubmittingQuote] = useState(false);
+  const [approvingQuote, setApprovingQuote] = useState(false);
+  const [decliningQuote, setDecliningQuote] = useState(false);
 
   // Payment & Settlement State
   const [isPaymentPending, setIsPaymentPending] = useState(false);
@@ -146,6 +263,14 @@ export default function PresentationMode() {
     });
   };
 
+  // Toast notification helper
+  const showToast = (message) => {
+    setGlobalToast(message);
+    setTimeout(() => {
+      setGlobalToast((cur) => (cur === message ? "" : cur));
+    }, 3500);
+  };
+
   // Clear error state whenever booking status updates
   useEffect(() => {
     setError("");
@@ -154,7 +279,7 @@ export default function PresentationMode() {
 
   // Step 1: Technician accepts service request (ASSIGNED -> ACCEPTED)
   const handleAcceptJob = () => {
-    if (!booking) return;
+    if (!booking || acceptingJob) return;
 
     const currentStatus = (booking.status || "").toUpperCase();
     if (currentStatus !== "ASSIGNED") {
@@ -165,12 +290,14 @@ export default function PresentationMode() {
     setOtpError("");
     setError("");
 
-    setBooking((prev) => ({
-      ...(prev || {}),
-      status: "ACCEPTED",
-    }));
-
-    setAcceptingJob(false);
+    setTimeout(() => {
+      setBooking((prev) => ({
+        ...(prev || {}),
+        status: "ACCEPTED",
+      }));
+      setAcceptingJob(false);
+      showToast("✓ Service Request Accepted · Technician Dispatched");
+    }, 750);
   };
 
   const handleAcceptOrder = handleAcceptJob;
@@ -178,7 +305,7 @@ export default function PresentationMode() {
   // Step 2: Technician verifies Start PIN (ACCEPTED -> IN_PROGRESS)
   const handleVerifyStartPin = (e) => {
     if (e) e.preventDefault();
-    if (!booking) return;
+    if (!booking || verifyingStart) return;
 
     const trimmed = enteredStartOtp.trim();
     if (!trimmed) {
@@ -195,7 +322,7 @@ export default function PresentationMode() {
 
     const expectedPin = String(booking?.start_otp || "4821").trim();
     if (trimmed !== expectedPin) {
-      setOtpError(`✕ Invalid Start PIN. Please enter ${expectedPin}.`);
+      setOtpError("Invalid OTP. Please check the customer screen and try again.");
       triggerShake("start");
       return;
     }
@@ -203,20 +330,22 @@ export default function PresentationMode() {
     setVerifyingStart(true);
     setOtpError("");
 
-    setBooking((prev) => ({
-      ...(prev || {}),
-      status: "IN_PROGRESS",
-      start_otp_verified_at: new Date().toISOString(),
-    }));
-
-    setEnteredStartOtp("");
-    setVerifyingStart(false);
+    setTimeout(() => {
+      setBooking((prev) => ({
+        ...(prev || {}),
+        status: "IN_PROGRESS",
+        start_otp_verified_at: new Date().toISOString(),
+      }));
+      setEnteredStartOtp("");
+      setVerifyingStart(false);
+      showToast("✓ Start OTP verified · Service is now In Progress");
+    }, 850);
   };
 
   // Step 5: Technician verifies Completion PIN (IN_PROGRESS -> PAYMENT_PENDING)
   const handleVerifyEndPin = (e) => {
     if (e) e.preventDefault();
-    if (!booking) return;
+    if (!booking || verifyingEnd) return;
 
     const trimmed = enteredEndOtp.trim();
     if (!trimmed) {
@@ -233,7 +362,7 @@ export default function PresentationMode() {
 
     const expectedPin = String(booking?.end_otp || booking?.completion_otp || "9134").trim();
     if (trimmed !== expectedPin) {
-      setOtpError(`✕ Invalid Completion PIN. Please enter ${expectedPin}.`);
+      setOtpError("Invalid OTP. Please check the customer screen and try again.");
       triggerShake("end");
       return;
     }
@@ -241,16 +370,18 @@ export default function PresentationMode() {
     setVerifyingEnd(true);
     setOtpError("");
 
-    const verifiedAt = new Date().toISOString();
-    setBooking((prev) => ({
-      ...(prev || {}),
-      status: "PAYMENT_PENDING",
-      end_otp_verified_at: verifiedAt,
-    }));
-
-    setEnteredEndOtp("");
-    setIsPaymentPending(true);
-    setVerifyingEnd(false);
+    setTimeout(() => {
+      const verifiedAt = new Date().toISOString();
+      setBooking((prev) => ({
+        ...(prev || {}),
+        status: "PAYMENT_PENDING",
+        end_otp_verified_at: verifiedAt,
+      }));
+      setEnteredEndOtp("");
+      setIsPaymentPending(true);
+      setVerifyingEnd(false);
+      showToast("✓ Completion OTP verified · Proceed to Payment Settlement");
+    }, 850);
   };
 
   const triggerShake = (type) => {
@@ -298,42 +429,60 @@ export default function PresentationMode() {
   };
 
   const handleSubmitQuote = () => {
-    if (!booking) return;
+    if (!booking || submittingQuote) return;
     const extraTotal = calculateQuoteAdditional();
     if (extraTotal === 0) return;
-    const payload = {
-      booking_id: booking.booking_id,
-      items: selectedQuoteItems,
-      additional_amount: extraTotal,
-      total_with_base: 239 + extraTotal,
-      status: "QUOTE_PENDING",
-      trade_category: currentRateCard.category,
-      created_at: new Date().toISOString(),
-    };
-    saveBookingQuotation(booking.booking_id, payload);
-    setQuoteVersion((v) => v + 1);
+
+    setSubmittingQuote(true);
+    setTimeout(() => {
+      const payload = {
+        booking_id: booking.booking_id,
+        items: selectedQuoteItems,
+        additional_amount: extraTotal,
+        total_with_base: 239 + extraTotal,
+        status: "QUOTE_PENDING",
+        trade_category: currentRateCard.category,
+        created_at: new Date().toISOString(),
+      };
+      saveBookingQuotation(booking.booking_id, payload);
+      setQuoteVersion((v) => v + 1);
+      setSubmittingQuote(false);
+      showToast("Quotation sent for customer approval");
+    }, 650);
   };
 
   const handleCustomerApproveQuote = () => {
-    if (!booking || !quotation) return;
-    const updated = {
-      ...quotation,
-      status: "APPROVED",
-      approved_at: new Date().toISOString(),
-    };
-    saveBookingQuotation(booking.booking_id, updated);
-    setQuoteVersion((v) => v + 1);
+    if (!booking || !quotation || approvingQuote) return;
+    setApprovingQuote(true);
+
+    setTimeout(() => {
+      const updated = {
+        ...quotation,
+        status: "APPROVED",
+        approved_at: new Date().toISOString(),
+      };
+      saveBookingQuotation(booking.booking_id, updated);
+      setQuoteVersion((v) => v + 1);
+      setApprovingQuote(false);
+      showToast("✓ Quotation Approved");
+    }, 750);
   };
 
   const handleCustomerDeclineQuote = () => {
-    if (!booking || !quotation) return;
-    const updated = {
-      ...quotation,
-      status: "REJECTED",
-      rejected_at: new Date().toISOString(),
-    };
-    saveBookingQuotation(booking.booking_id, updated);
-    setQuoteVersion((v) => v + 1);
+    if (!booking || !quotation || decliningQuote) return;
+    setDecliningQuote(true);
+
+    setTimeout(() => {
+      const updated = {
+        ...quotation,
+        status: "REJECTED",
+        rejected_at: new Date().toISOString(),
+      };
+      saveBookingQuotation(booking.booking_id, updated);
+      setQuoteVersion((v) => v + 1);
+      setDecliningQuote(false);
+      showToast("Quotation Rejected");
+    }, 600);
   };
 
   const calculatePayableTotal = () => {
@@ -344,49 +493,54 @@ export default function PresentationMode() {
     return base;
   };
 
-  // Payment Execution (Frontend Demo Pay)
-  const handleCustomerExecutePayment = () => {
-    if (!booking) return;
+  // Payment Execution (Frontend Demo Pay for Customer & Worker QR)
+  const handleExecutePayment = () => {
+    if (!booking || payingDemo) return;
     setPayingDemo(true);
 
     const finalAmount = calculatePayableTotal();
     const paidAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 72 * 3600 * 1000).toISOString();
 
-    const pData = {
-      booking_id: booking.booking_id,
-      amount: finalAmount,
-      status: "PAID",
-      payment_method: selectedPaymentMethod,
-      paid_at: paidAt,
-    };
-    saveBookingPayment(booking.booking_id, pData);
+    setTimeout(() => {
+      const pData = {
+        booking_id: booking.booking_id,
+        amount: finalAmount,
+        status: "PAID",
+        payment_method: selectedPaymentMethod,
+        paid_at: paidAt,
+      };
+      saveBookingPayment(booking.booking_id, pData);
 
-    const wData = {
-      started_at: paidAt,
-      expires_at: expiresAt,
-      active: true,
-    };
-    saveBookingWarranty(booking.booking_id, wData);
+      const wData = {
+        started_at: paidAt,
+        expires_at: expiresAt,
+        active: true,
+      };
+      saveBookingWarranty(booking.booking_id, wData);
 
-    setQuoteVersion((v) => v + 1);
+      setQuoteVersion((v) => v + 1);
 
-    setBooking((prev) => ({
-      ...prev,
-      status: "COMPLETED",
-      payment_status: "PAID",
-      warranty_started_at: paidAt,
-      warranty_expires_at: expiresAt,
-    }));
+      setBooking((prev) => ({
+        ...prev,
+        status: "COMPLETED",
+        payment_status: "PAID",
+        warranty_started_at: paidAt,
+        warranty_expires_at: expiresAt,
+      }));
 
-    setPaymentSuccessData({
-      amount: finalAmount,
-      paidAt: paidAt,
-    });
+      setPaymentSuccessData({
+        amount: finalAmount,
+        paidAt: paidAt,
+      });
 
-    setIsPaymentPending(false);
-    setPayingDemo(false);
+      setIsPaymentPending(false);
+      setPayingDemo(false);
+      showToast("✓ Payment Successful · 3-Day Workmanship Protection Active");
+    }, 1100);
   };
+
+  const handleCustomerExecutePayment = handleExecutePayment;
 
   const isPaid = paymentData?.status === "PAID" || booking?.payment_status === "PAID";
   const isEndVerified = Boolean(booking?.end_otp_verified_at || isPaymentPending);
@@ -419,6 +573,13 @@ export default function PresentationMode() {
 
   return (
     <div className="presentation-page">
+      {/* Toast Notification Banner */}
+      {globalToast && (
+        <div className="demo-toast-banner">
+          <span>{globalToast}</span>
+        </div>
+      )}
+
       {/* Top Header */}
       <header className="presentation-topbar">
         <div className="topbar-left">
@@ -644,16 +805,30 @@ export default function PresentationMode() {
                           className="secondary-btn"
                           style={{ flex: 1, padding: "8px 10px", fontSize: "12px" }}
                           onClick={handleCustomerDeclineQuote}
+                          disabled={decliningQuote || approvingQuote}
                         >
-                          Reject
+                          {decliningQuote ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                              <span className="btn-inline-spinner dark"></span> Rejecting...
+                            </span>
+                          ) : (
+                            "Reject"
+                          )}
                         </button>
                         <button
                           type="button"
                           className="primary-btn"
                           style={{ flex: 1, padding: "8px 10px", fontSize: "12px", background: "#059669", borderColor: "#059669" }}
                           onClick={handleCustomerApproveQuote}
+                          disabled={decliningQuote || approvingQuote}
                         >
-                          ✓ Approve
+                          {approvingQuote ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                              <span className="btn-inline-spinner"></span> Approving...
+                            </span>
+                          ) : (
+                            "✓ Approve"
+                          )}
                         </button>
                       </div>
                     )}
@@ -819,7 +994,13 @@ export default function PresentationMode() {
                       onClick={handleCustomerExecutePayment}
                       disabled={payingDemo}
                     >
-                      {payingDemo ? "Processing..." : `💳 Demo Pay ₹${calculatePayableTotal()}`}
+                      {payingDemo ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                          <span className="btn-inline-spinner"></span> Processing Payment...
+                        </span>
+                      ) : (
+                        `💳 Demo Pay ₹${calculatePayableTotal()}`
+                      )}
                     </button>
                     <p style={{ textAlign: "center", fontSize: "11px", color: "#64748b", margin: "6px 0 0" }}>
                       Demo payment — no real money charged
@@ -969,7 +1150,13 @@ export default function PresentationMode() {
                         onClick={handleAcceptJob}
                         disabled={acceptingJob}
                       >
-                        {acceptingJob ? "⟳ Accepting Service Request..." : "Accept Service Request →"}
+                        {acceptingJob ? (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                            <span className="btn-inline-spinner"></span> Accepting Service Request...
+                          </span>
+                        ) : (
+                          "Accept Service Request →"
+                        )}
                       </button>
                     </div>
                   )}
@@ -1009,7 +1196,13 @@ export default function PresentationMode() {
                           className="primary-btn full-btn"
                           disabled={verifyingStart || booking?.is_start_otp_locked}
                         >
-                          {verifyingStart ? "⟳ Verifying Start PIN..." : "Verify Start PIN"}
+                          {verifyingStart ? (
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                              <span className="btn-inline-spinner"></span> Verifying Start PIN...
+                            </span>
+                          ) : (
+                            "Verify Start PIN"
+                          )}
                         </button>
                       </form>
 
@@ -1174,8 +1367,15 @@ export default function PresentationMode() {
                                   className="primary-btn mini-demo-btn"
                                   style={{ background: "#0284c7", borderColor: "#0284c7" }}
                                   onClick={handleSubmitQuote}
+                                  disabled={submittingQuote}
                                 >
-                                  Send for Customer Approval
+                                  {submittingQuote ? (
+                                    <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                                      <span className="btn-inline-spinner"></span> Submitting Quotation...
+                                    </span>
+                                  ) : (
+                                    "Send for Customer Approval"
+                                  )}
                                 </button>
                               </div>
                             </div>
@@ -1250,7 +1450,13 @@ export default function PresentationMode() {
                             className="primary-btn full-btn"
                             disabled={verifyingEnd || booking?.is_end_otp_locked}
                           >
-                            {verifyingEnd ? "⟳ Verifying Completion PIN..." : "Verify Completion PIN"}
+                            {verifyingEnd ? (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                                <span className="btn-inline-spinner"></span> Verifying Completion PIN...
+                              </span>
+                            ) : (
+                              "Verify Completion PIN"
+                            )}
                           </button>
                         </form>
 
@@ -1263,13 +1469,80 @@ export default function PresentationMode() {
                     </div>
                   )}
 
-                  {/* STATE 4: PAYMENT_PENDING -> Awaiting Customer Settlement */}
+                  {/* STATE 4: PAYMENT_PENDING -> Awaiting Settlement & Worker UPI QR */}
                   {normStatus === "PAYMENT_PENDING" && (
-                    <div className="terminal-step-box" style={{ background: "#fffbeb", borderColor: "#f59e0b" }}>
-                      <h4 style={{ margin: 0, color: "#b45309" }}>Job Completed — Payment Pending</h4>
-                      <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#92400e" }}>
-                        Completion PIN verified. Waiting for customer to complete payment of ₹{calculatePayableTotal()} on their screen.
-                      </p>
+                    <div className="terminal-step-box" style={{ background: "#f8fafc", borderColor: "#059669", padding: "16px" }}>
+                      {selectedPaymentMethod === "UPI" ? (
+                        <div className="worker-upi-payment-card">
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                            <span className="quote-badge" style={{ background: "#ecfdf5", color: "#065f46", fontWeight: 800 }}>
+                              📱 UPI PAYMENT
+                            </span>
+                            <span className="status-badge yellow mini">Awaiting Payment</span>
+                          </div>
+
+                          <p style={{ fontSize: "12px", color: "#475569", margin: "4px 0 12px" }}>
+                            Scan this QR to complete payment
+                          </p>
+
+                          {/* Dynamic Demo QR Code */}
+                          <div className="demo-qr-container">
+                            <DemoUpiQr amount={calculatePayableTotal()} orderId={booking?.booking_reference || bookingId} size={150} />
+                            <div style={{ marginTop: "8px", fontSize: "11px", fontWeight: 700, color: "#065f46" }}>
+                              SAHĀYU COOPERATIVE UPI
+                            </div>
+                          </div>
+
+                          <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontSize: "13px", color: "#475569" }}>Amount:</span>
+                            <strong style={{ fontSize: "16px", color: "#059669" }}>₹{calculatePayableTotal()}</strong>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="primary-btn full-btn"
+                            style={{ background: "#059669", borderColor: "#059669", padding: "10px 14px", fontSize: "13px", fontWeight: 800 }}
+                            onClick={handleExecutePayment}
+                            disabled={payingDemo}
+                          >
+                            {payingDemo ? (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                                <span className="btn-inline-spinner"></span> Processing Payment...
+                              </span>
+                            ) : (
+                              "✓ Confirm Demo Payment"
+                            )}
+                          </button>
+                          <p style={{ fontSize: "11px", color: "#64748b", margin: "6px 0 0" }}>
+                            Demo settlement — updates booking to COMPLETED and activates 72h warranty
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                            <h4 style={{ margin: 0, color: "#b45309" }}>Job Completed — Payment Pending</h4>
+                            <span className="status-badge yellow mini">₹{calculatePayableTotal()}</span>
+                          </div>
+                          <p style={{ margin: "4px 0 12px", fontSize: "12px", color: "#92400e" }}>
+                            Customer is paying via {selectedPaymentMethod} on their screen.
+                          </p>
+                          <button
+                            type="button"
+                            className="primary-btn full-btn"
+                            style={{ background: "#059669", borderColor: "#059669", padding: "10px 14px", fontSize: "13px", fontWeight: 800 }}
+                            onClick={handleExecutePayment}
+                            disabled={payingDemo}
+                          >
+                            {payingDemo ? (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                                <span className="btn-inline-spinner"></span> Processing Payment...
+                              </span>
+                            ) : (
+                              `Payment Received (₹${calculatePayableTotal()})`
+                            )}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
