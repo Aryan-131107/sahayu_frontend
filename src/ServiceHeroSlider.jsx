@@ -160,11 +160,11 @@ export default function ServiceHeroSlider() {
             <button
               className="secondary-btn slider-explore-btn"
               onClick={() => {
-                const el = document.getElementById("services");
+                const el = document.getElementById("about");
                 if (el) el.scrollIntoView({ behavior: "smooth" });
               }}
             >
-              All Services
+              Why Sahāyu
             </button>
           </div>
         </div>

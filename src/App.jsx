@@ -19,24 +19,9 @@ import {
 } from "react-router-dom";
 
 import ServiceHeroSlider from "./ServiceHeroSlider";
-import plumbing from "./assets/plumbing.png";
-import electrical from "./assets/electrical.png";
-import cleaning from "./assets/cleaning.png";
-import carpentry from "./assets/carpentry.png";
-import gardening from "./assets/gardening.png";
-import care from "./assets/care.png";
 
 function Home() {
   const navigate = useNavigate();
-
-  const goToService = (service) => {
-    const isCustomerAuth = sessionStorage.getItem("sahayu_customer_auth") === "true";
-    if (isCustomerAuth) {
-      navigate(`/customer?service=${encodeURIComponent(service)}`);
-    } else {
-      navigate(`/login?role=customer&redirect=${encodeURIComponent(`/customer?service=${encodeURIComponent(service)}`)}`);
-    }
-  };
 
   return (
     <div className="app">
@@ -66,156 +51,8 @@ function Home() {
       </nav>
 
       {/* 6-SERVICE HERO CAROUSEL SLIDER */}
-      <section className="hero-slider-section">
+      <section className="hero-slider-section" id="services">
         <ServiceHeroSlider />
-      </section>
-
-      {/* SERVICES */}
-      <section className="services" id="services">
-
-        <div className="section-heading">
-
-          <div>
-            <span className="section-label">
-              OUR SERVICES
-            </span>
-
-            <h2>
-              Everything you need,{" "}
-              <span>near you.</span>
-            </h2>
-          </div>
-
-          <p>
-            Find skilled and verified cooperative workers
-            for everyday household needs.
-          </p>
-
-        </div>
-
-        <div className="service-grid">
-
-          {/* PLUMBING */}
-          <div
-            className="service-card"
-            onClick={() => goToService("Plumbing")}
-          >
-            <img
-              src={plumbing}
-              alt="Plumbing"
-              className="service-image"
-            />
-
-            <div className="service-icon">🔧</div>
-
-            <h3>Plumbing</h3>
-
-            <p>
-              Repairs, installation & maintenance
-            </p>
-          </div>
-
-          {/* ELECTRICAL */}
-          <div
-            className="service-card"
-            onClick={() => goToService("Electrical")}
-          >
-            <img
-              src={electrical}
-              alt="Electrical"
-              className="service-image"
-            />
-
-            <div className="service-icon">⚡</div>
-
-            <h3>Electrical</h3>
-
-            <p>
-              Safe electrical repair & installation
-            </p>
-          </div>
-
-          {/* CLEANING */}
-          <div
-            className="service-card"
-            onClick={() => goToService("Cleaning")}
-          >
-            <img
-              src={cleaning}
-              alt="Cleaning"
-              className="service-image"
-            />
-
-            <div className="service-icon">🧹</div>
-
-            <h3>Cleaning</h3>
-
-            <p>
-              Professional home cleaning services
-            </p>
-          </div>
-
-          {/* CARPENTRY */}
-          <div
-            className="service-card"
-            onClick={() => goToService("Carpentry")}
-          >
-            <img
-              src={carpentry}
-              alt="Carpentry"
-              className="service-image"
-            />
-
-            <div className="service-icon">🪚</div>
-
-            <h3>Carpentry</h3>
-
-            <p>
-              Furniture repair & woodwork
-            </p>
-          </div>
-
-          {/* GARDENING */}
-          <div
-            className="service-card"
-            onClick={() => goToService("Gardening")}
-          >
-            <img
-              src={gardening}
-              alt="Gardening"
-              className="service-image"
-            />
-
-            <div className="service-icon">🌱</div>
-
-            <h3>Gardening</h3>
-
-            <p>
-              Garden care & maintenance
-            </p>
-          </div>
-
-          {/* CARE */}
-          <div
-            className="service-card"
-            onClick={() => goToService("Care Services")}
-          >
-            <img
-              src={care}
-              alt="Care Services"
-              className="service-image"
-            />
-
-            <div className="service-icon">❤️</div>
-
-            <h3>Care Services</h3>
-
-            <p>
-              Trusted assistance for families
-            </p>
-          </div>
-
-        </div>
       </section>
 
       {/* WHY SAHĀYU */}
