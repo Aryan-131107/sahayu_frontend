@@ -12,6 +12,14 @@ function WorkerVerification() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
+  // Authentication Guard: Ensure worker has verified session
+  useEffect(() => {
+    const isWorkerAuth = sessionStorage.getItem("sahayu_worker_auth") === "true";
+    if (!isWorkerAuth) {
+      navigate("/login?role=worker&redirect=/worker/verification", { replace: true });
+    }
+  }, [navigate]);
+
   const queryWorkerId = searchParams.get("worker_id") || localStorage.getItem("sahayu_worker_id") || "11";
 
   const [workersList, setWorkersList] = useState([]);

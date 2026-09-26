@@ -26,6 +26,14 @@ import "./App.css";
 function Worker() {
   const navigate = useNavigate();
 
+  // Authentication Guard: Ensure worker has verified session
+  useEffect(() => {
+    const isWorkerAuth = sessionStorage.getItem("sahayu_worker_auth") === "true";
+    if (!isWorkerAuth) {
+      navigate("/login?role=worker&redirect=/worker", { replace: true });
+    }
+  }, [navigate]);
+
   const [workerId, setWorkerId] = useState(
     () => localStorage.getItem("sahayu_worker_id") || "11"
   );
@@ -483,14 +491,6 @@ function Worker() {
           </button>
 
           <button
-            className="primary-btn"
-            style={{ background: "#0284c7", borderColor: "#0284c7" }}
-            onClick={() => navigate("/live-demo")}
-          >
-            ⚡ Live Demo
-          </button>
-
-          <button
             className="secondary-btn"
             onClick={() => navigate(`/worker/verification?worker_id=${workerId}`)}
           >
@@ -506,6 +506,19 @@ function Worker() {
             }
           >
             My Profile
+          </button>
+
+          <button
+            className="secondary-btn"
+            style={{ color: "#ef4444", borderColor: "#fca5a5" }}
+            onClick={() => {
+              sessionStorage.removeItem("sahayu_worker_auth");
+              sessionStorage.removeItem("sahayu_worker_phone");
+              sessionStorage.removeItem("sahayu_worker_eshram");
+              navigate("/login?role=worker");
+            }}
+          >
+            🚪 Logout
           </button>
         </div>
       </nav>

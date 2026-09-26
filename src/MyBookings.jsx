@@ -22,6 +22,14 @@ function MyBookings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
 
+  // Authentication Guard: Ensure customer has verified session
+  useEffect(() => {
+    const isCustomerAuth = sessionStorage.getItem("sahayu_customer_auth") === "true";
+    if (!isCustomerAuth) {
+      navigate("/login?role=customer&redirect=/my-bookings", { replace: true });
+    }
+  }, [navigate]);
+
   const initialId =
     searchParams.get("booking_id") ||
     location.state?.newBookingId ||
@@ -255,17 +263,22 @@ function MyBookings() {
 
           <button
             className="primary-btn"
-            style={{ background: "#0284c7", borderColor: "#0284c7" }}
-            onClick={() => navigate(`/live-demo?booking_id=${bookingId}`)}
-          >
-            ⚡ Live Demo
-          </button>
-
-          <button
-            className="primary-btn"
             onClick={() => navigate("/customer")}
           >
             New Booking
+          </button>
+
+          <button
+            className="secondary-btn"
+            style={{ color: "#ef4444", borderColor: "#fca5a5" }}
+            onClick={() => {
+              sessionStorage.removeItem("sahayu_customer_auth");
+              sessionStorage.removeItem("sahayu_customer_email");
+              sessionStorage.removeItem("sahayu_customer_name");
+              navigate("/login?role=customer");
+            }}
+          >
+            🚪 Logout
           </button>
         </div>
       </nav>

@@ -9,6 +9,14 @@ function Booking() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
+  // Authentication Guard: Ensure customer has verified session
+  useEffect(() => {
+    const isCustomerAuth = sessionStorage.getItem("sahayu_customer_auth") === "true";
+    if (!isCustomerAuth) {
+      navigate("/login?role=customer&redirect=/booking", { replace: true });
+    }
+  }, [navigate]);
+
   const reqState = location.state || {};
   const workerId =
     reqState.worker_id ||

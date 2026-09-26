@@ -7,6 +7,14 @@ function Customer() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
+  // Authentication Guard: Ensure customer has verified session
+  useEffect(() => {
+    const isCustomerAuth = sessionStorage.getItem("sahayu_customer_auth") === "true";
+    if (!isCustomerAuth) {
+      navigate("/login?role=customer&redirect=/customer", { replace: true });
+    }
+  }, [navigate]);
+
   const [services, setServices] = useState([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [servicesError, setServicesError] = useState("");
@@ -194,6 +202,19 @@ function Customer() {
             onClick={() => navigate("/my-bookings")}
           >
             My Bookings
+          </button>
+
+          <button
+            className="secondary-btn"
+            style={{ color: "#ef4444", borderColor: "#fca5a5" }}
+            onClick={() => {
+              sessionStorage.removeItem("sahayu_customer_auth");
+              sessionStorage.removeItem("sahayu_customer_email");
+              sessionStorage.removeItem("sahayu_customer_name");
+              navigate("/login?role=customer");
+            }}
+          >
+            🚪 Logout
           </button>
         </div>
       </nav>

@@ -25,6 +25,14 @@ function Workers() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
+  // Authentication Guard: Ensure customer has verified session
+  useEffect(() => {
+    const isCustomerAuth = sessionStorage.getItem("sahayu_customer_auth") === "true";
+    if (!isCustomerAuth) {
+      navigate("/login?role=customer&redirect=/workers", { replace: true });
+    }
+  }, [navigate]);
+
   const reqState = location.state || {};
   const serviceId =
     reqState.service_id ||

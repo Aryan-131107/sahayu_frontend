@@ -18,7 +18,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 
-import heroWorker from "./assets/hero-worker.png";
+import ServiceHeroSlider from "./ServiceHeroSlider";
 import plumbing from "./assets/plumbing.png";
 import electrical from "./assets/electrical.png";
 import cleaning from "./assets/cleaning.png";
@@ -30,7 +30,12 @@ function Home() {
   const navigate = useNavigate();
 
   const goToService = (service) => {
-    navigate(`/customer?service=${encodeURIComponent(service)}`);
+    const isCustomerAuth = sessionStorage.getItem("sahayu_customer_auth") === "true";
+    if (isCustomerAuth) {
+      navigate(`/customer?service=${encodeURIComponent(service)}`);
+    } else {
+      navigate(`/login?role=customer&redirect=${encodeURIComponent(`/customer?service=${encodeURIComponent(service)}`)}`);
+    }
   };
 
   return (
@@ -52,105 +57,17 @@ function Home() {
 
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
           <button
-            className="primary-btn"
-            style={{ background: "#0284c7", borderColor: "#0284c7", padding: "8px 16px", fontSize: "13px" }}
-            onClick={() => navigate("/live-demo")}
-          >
-            ⚡ Live Demo
-          </button>
-
-          <button
             className="login-btn"
             onClick={() => navigate("/login")}
           >
-            Login
+            Portal Login
           </button>
         </div>
       </nav>
 
-      {/* HERO */}
-      <section className="hero">
-        <div className="hero-content">
-
-          <div className="badge">
-            🤝 Cooperative Powered Services
-          </div>
-
-          <h1>
-            Trusted Services.
-            <br />
-            <span>Fair Wages.</span>
-          </h1>
-
-          <p>
-            Connect with verified local service professionals
-            through a cooperative-powered platform built for
-            communities.
-          </p>
-
-          <div className="search-box">
-
-            <div className="search-item">
-              <span>📍</span>
-
-              <div>
-                <small>Location</small>
-                <strong>Your location</strong>
-              </div>
-            </div>
-
-            <div className="search-divider" />
-
-            <div className="search-item">
-              <span>🔍</span>
-
-              <div>
-                <small>What do you need?</small>
-                <strong>Search services</strong>
-              </div>
-            </div>
-
-            <button
-              className="search-btn"
-              onClick={() =>
-                document
-                  .getElementById("services")
-                  ?.scrollIntoView({ behavior: "smooth" })
-              }
-            >
-              Find a Service
-            </button>
-
-          </div>
-
-          <div className="trust-row">
-            <span>✓ Verified Workers</span>
-            <span>✓ Transparent Pricing</span>
-            <span>✓ Community First</span>
-          </div>
-
-        </div>
-
-        <div className="hero-visual">
-          <div className="hero-card">
-
-            <img
-              src={heroWorker}
-              alt="Sahāyu service professional"
-              className="hero-image"
-            />
-
-            <div className="worker-info">
-              <strong>Trusted Professionals</strong>
-              <p>Ready to help your community</p>
-            </div>
-
-            <div className="rating">
-              ⭐ 4.8
-            </div>
-
-          </div>
-        </div>
+      {/* 6-SERVICE HERO CAROUSEL SLIDER */}
+      <section className="hero-slider-section">
+        <ServiceHeroSlider />
       </section>
 
       {/* SERVICES */}
@@ -454,7 +371,7 @@ function Home() {
 
         <button
           className="primary-btn"
-          onClick={() => navigate("/worker")}
+          onClick={() => navigate("/login?role=worker")}
         >
           Join as a Worker
         </button>

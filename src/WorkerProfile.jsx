@@ -7,6 +7,14 @@ function WorkerProfile() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Authentication Guard: Ensure worker has verified session
+  useEffect(() => {
+    const isWorkerAuth = sessionStorage.getItem("sahayu_worker_auth") === "true";
+    if (!isWorkerAuth) {
+      navigate("/login?role=worker&redirect=/worker-profile", { replace: true });
+    }
+  }, [navigate]);
+
   const workerId =
     location.state?.worker_id ||
     localStorage.getItem("sahayu_worker_id") ||
