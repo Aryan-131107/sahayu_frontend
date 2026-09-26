@@ -12,6 +12,7 @@ import {
   saveBookingWarranty,
   completeBooking,
 } from "./api";
+import { isCustomerAuthenticated } from "./auth";
 import ServiceTimeline from "./ServiceTimeline";
 import ServiceMap from "./ServiceMap";
 import WarrantyCountdown from "./WarrantyCountdown";
@@ -24,8 +25,7 @@ function MyBookings() {
 
   // Authentication Guard: Ensure customer has verified session
   useEffect(() => {
-    const isCustomerAuth = sessionStorage.getItem("sahayu_customer_auth") === "true";
-    if (!isCustomerAuth) {
+    if (!isCustomerAuthenticated()) {
       navigate("/login?role=customer&redirect=/my-bookings", { replace: true });
     }
   }, [navigate]);

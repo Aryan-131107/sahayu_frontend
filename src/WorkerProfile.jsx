@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { getWorker, updateWorkerAvailability, getStoredVerification } from "./api";
+import { isWorkerAuthenticated } from "./auth";
 import "./App.css";
 
 function WorkerProfile() {
@@ -9,8 +10,7 @@ function WorkerProfile() {
 
   // Authentication Guard: Ensure worker has verified session
   useEffect(() => {
-    const isWorkerAuth = sessionStorage.getItem("sahayu_worker_auth") === "true";
-    if (!isWorkerAuth) {
+    if (!isWorkerAuthenticated()) {
       navigate("/login?role=worker&redirect=/worker-profile", { replace: true });
     }
   }, [navigate]);

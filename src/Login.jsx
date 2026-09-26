@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { setAuthSession, getAuthSession } from "./auth";
+import { createCustomer, getSkills } from "./api";
 import "./App.css";
 
 export default function Login() {
@@ -7,43 +9,85 @@ export default function Login() {
   const [searchParams] = useSearchParams();
 
   const initialRole = searchParams.get("role") || "customer";
+  const initialMode = searchParams.get("mode") || "login";
   const redirectPath = searchParams.get("redirect");
 
-  const [activeTab, setActiveTab] = useState(initialRole === "worker" ? "worker" : "customer");
+  const [activeRole, setActiveRole] = useState(initialRole === "worker" ? "worker" : "customer");
+  const [authMode, setAuthMode] = useState(initialMode === "signup" ? "signup" : "login");
 
-  // Worker Auth Form State
+  // Dynamic Skill list for Worker registration
+  const [skillsList, setSkillsList] = useState([]);
+
+  // Worker Form State
+  const [workerName, setWorkerName] = useState("");
   const [workerEshram, setWorkerEshram] = useState("");
   const [workerPhone, setWorkerPhone] = useState("");
+  const [workerSkill, setWorkerSkill] = useState("Electrician");
+  const [workerExp, setWorkerExp] = useState("5");
   const [workerOtpSent, setWorkerOtpSent] = useState(false);
   const [workerOtp, setWorkerOtp] = useState("");
-  const [workerSendingOtp, setWorkerSendingOtp] = useState(false);
-  const [workerVerifying, setWorkerVerifying] = useState(false);
+  const [workerLoading, setWorkerLoading] = useState(false);
   const [workerError, setWorkerError] = useState("");
   const [workerSuccess, setWorkerSuccess] = useState("");
 
-  // Customer Auth Form State
+  // Customer Form State
+  const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
   const [customerOtpSent, setCustomerOtpSent] = useState(false);
   const [customerOtp, setCustomerOtp] = useState("");
-  const [customerSendingOtp, setCustomerSendingOtp] = useState(false);
-  const [customerVerifying, setCustomerVerifying] = useState(false);
+  const [customerLoading, setCustomerLoading] = useState(false);
   const [customerError, setCustomerError] = useState("");
   const [customerSuccess, setCustomerSuccess] = useState("");
   const [googleSigningIn, setGoogleSigningIn] = useState(false);
 
+  // Auto-redirect if already authenticated with matching role
+  useEffect(() => {
+    const existing = getAuthSession();
+    if (existing && existing.role === activeRole) {
+      navigate(redirectPath || (existing.role === "worker" ? "/worker" : "/customer"), { replace: true });
+    }
+  }, [activeRole, navigate, redirectPath]);
+
   useEffect(() => {
     const roleParam = searchParams.get("role");
-    if (roleParam === "worker") setActiveTab("worker");
-    else if (roleParam === "customer") setActiveTab("customer");
+    const modeParam = searchParams.get("mode");
+    if (roleParam === "worker") setActiveRole("worker");
+    else if (roleParam === "customer") setActiveRole("customer");
+    if (modeParam === "signup") setAuthMode("signup");
+    else if (modeParam === "login") setAuthMode("login");
   }, [searchParams]);
 
-  // Clear errors when switching tabs
-  const handleTabChange = (tab) => {
-    setActiveTab(tab);
+  useEffect(() => {
+    getSkills()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setSkillsList(data);
+          setWorkerSkill(data[0].skill_name || "Electrician");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const clearAlerts = () => {
     setWorkerError("");
     setWorkerSuccess("");
     setCustomerError("");
     setCustomerSuccess("");
+  };
+
+  const handleRoleChange = (role) => {
+    setActiveRole(role);
+    clearAlerts();
+    setWorkerOtpSent(false);
+    setCustomerOtpSent(false);
+  };
+
+  const handleModeChange = (mode) => {
+    setAuthMode(mode);
+    clearAlerts();
+    setWorkerOtpSent(false);
+    setCustomerOtpSent(false);
   };
 
   // Format 12-digit e-Shram UAN
@@ -54,19 +98,30 @@ export default function Login() {
   };
 
   // Format 10-digit Phone
-  const handlePhoneChange = (e) => {
+  const handleWorkerPhoneChange = (e) => {
     const raw = e.target.value.replace(/\D/g, "").slice(0, 10);
     setWorkerPhone(raw);
     if (workerError) setWorkerError("");
   };
 
-  // Worker: Step 1 - Send OTP
+  const handleCustomerPhoneChange = (e) => {
+    const raw = e.target.value.replace(/\D/g, "").slice(0, 10);
+    setCustomerPhone(raw);
+    if (customerError) setCustomerError("");
+  };
+
+  // Worker: Send OTP
   const handleWorkerSendOtp = (e) => {
     e.preventDefault();
     setWorkerError("");
 
+    if (authMode === "signup" && !workerName.trim()) {
+      setWorkerError("Please enter your full name as printed on your Aadhaar / e-Shram card.");
+      return;
+    }
+
     if (workerEshram.length !== 12) {
-      setWorkerError("Please enter a valid 12-digit e-Shram UAN number.");
+      setWorkerError("Please enter a valid 12-digit National e-Shram UAN ID.");
       return;
     }
     if (workerPhone.length !== 10) {
@@ -74,15 +129,19 @@ export default function Login() {
       return;
     }
 
-    setWorkerSendingOtp(true);
+    setWorkerLoading(true);
     setTimeout(() => {
-      setWorkerSendingOtp(false);
+      setWorkerLoading(false);
       setWorkerOtpSent(true);
-      setWorkerSuccess("Demo OTP 4821 generated for simulation. Enter it below to verify.");
+      setWorkerSuccess(
+        authMode === "signup"
+          ? "e-Shram identity validated. Simulation OTP 4821 generated for registration."
+          : "Demo OTP 4821 generated for simulation. Enter it below to log in."
+      );
     }, 700);
   };
 
-  // Worker: Step 2 - Verify OTP
+  // Worker: Verify & Complete Auth
   const handleWorkerVerify = (e) => {
     e.preventDefault();
     setWorkerError("");
@@ -97,26 +156,46 @@ export default function Login() {
       return;
     }
 
-    setWorkerVerifying(true);
+    setWorkerLoading(true);
     setTimeout(() => {
-      sessionStorage.setItem("sahayu_worker_auth", "true");
-      sessionStorage.setItem("sahayu_worker_phone", workerPhone);
-      sessionStorage.setItem("sahayu_worker_eshram", workerEshram);
-      if (!localStorage.getItem("sahayu_worker_id")) {
-        localStorage.setItem("sahayu_worker_id", "11");
-      }
-      setWorkerVerifying(false);
-      setWorkerSuccess("✓ Worker authentication verified! Opening Worker Desk...");
+      // Resolve worker identity
+      const matchedWorkerId = 11; // Default cooperative technician ID
+      const finalName = workerName.trim() || "Arvind Gupta";
+
+      setAuthSession({
+        role: "worker",
+        user: {
+          id: matchedWorkerId,
+          name: finalName,
+          phone: workerPhone,
+          uan: workerEshram,
+          trade: workerSkill,
+          provider: "eshram_otp",
+        },
+      });
+
+      setWorkerLoading(false);
+      setWorkerSuccess(
+        authMode === "signup"
+          ? `✓ Worker account registered! Welcome to Sahāyu Cooperative, ${finalName}.`
+          : "✓ Identity verified! Opening Worker Desk..."
+      );
+
       setTimeout(() => {
-        navigate(redirectPath || "/worker");
-      }, 500);
+        navigate(redirectPath || "/worker", { replace: true });
+      }, 600);
     }, 850);
   };
 
-  // Customer: Step 1 - Send OTP
+  // Customer: Send OTP
   const handleCustomerSendOtp = (e) => {
     e.preventDefault();
     setCustomerError("");
+
+    if (authMode === "signup" && !customerName.trim()) {
+      setCustomerError("Please enter your full name.");
+      return;
+    }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(customerEmail.trim())) {
@@ -124,16 +203,25 @@ export default function Login() {
       return;
     }
 
-    setCustomerSendingOtp(true);
+    if (authMode === "signup" && customerPhone && customerPhone.length !== 10) {
+      setCustomerError("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+
+    setCustomerLoading(true);
     setTimeout(() => {
-      setCustomerSendingOtp(false);
+      setCustomerLoading(false);
       setCustomerOtpSent(true);
-      setCustomerSuccess("Demo OTP 9134 generated for simulation. Enter it below to verify.");
+      setCustomerSuccess(
+        authMode === "signup"
+          ? "Registration initialized. Simulation OTP 9134 generated for verification."
+          : "Demo OTP 9134 generated for simulation. Enter it below to log in."
+      );
     }, 700);
   };
 
-  // Customer: Step 2 - Verify OTP
-  const handleCustomerVerify = (e) => {
+  // Customer: Verify & Complete Auth
+  const handleCustomerVerify = async (e) => {
     e.preventDefault();
     setCustomerError("");
 
@@ -147,33 +235,74 @@ export default function Login() {
       return;
     }
 
-    setCustomerVerifying(true);
+    setCustomerLoading(true);
+
+    const finalName = customerName.trim() || customerEmail.split("@")[0] || "Customer";
+    let customerId = 1;
+
+    // If Sign Up mode, try to register via backend API
+    if (authMode === "signup") {
+      try {
+        const created = await createCustomer({
+          name: finalName,
+          email: customerEmail.trim(),
+          phone: customerPhone.trim() || "9876543210",
+        });
+        if (created && (created.customer_id || created.id)) {
+          customerId = created.customer_id || created.id;
+        }
+      } catch (apiErr) {
+        console.warn("[Sahāyu Auth] Backend customer registration note:", apiErr.message);
+      }
+    }
+
     setTimeout(() => {
-      sessionStorage.setItem("sahayu_customer_auth", "true");
-      sessionStorage.setItem("sahayu_customer_email", customerEmail.trim());
-      setCustomerVerifying(false);
-      setCustomerSuccess("✓ Customer session verified! Redirecting to customer dashboard...");
+      setAuthSession({
+        role: "customer",
+        user: {
+          id: customerId,
+          name: finalName,
+          email: customerEmail.trim(),
+          phone: customerPhone.trim(),
+          provider: "email_otp",
+        },
+      });
+
+      setCustomerLoading(false);
+      setCustomerSuccess(
+        authMode === "signup"
+          ? `✓ Account created successfully! Welcome to Sahāyu, ${finalName}.`
+          : "✓ Customer session verified! Redirecting to customer dashboard..."
+      );
+
       setTimeout(() => {
-        navigate(redirectPath || "/customer");
-      }, 500);
+        navigate(redirectPath || "/customer", { replace: true });
+      }, 600);
     }, 850);
   };
 
-  // Customer: Google One-Click Login
+  // Customer: Google Sign-In
   const handleGoogleSignIn = () => {
     setCustomerError("");
     setGoogleSigningIn(true);
 
     setTimeout(() => {
-      sessionStorage.setItem("sahayu_customer_auth", "true");
-      sessionStorage.setItem("sahayu_customer_email", "aryan.demo@gmail.com");
-      sessionStorage.setItem("sahayu_customer_name", "Aryan Gupta");
+      setAuthSession({
+        role: "customer",
+        user: {
+          id: 1,
+          name: "Aryan Gupta",
+          email: "aryan.demo@gmail.com",
+          provider: "google",
+        },
+      });
+
       setGoogleSigningIn(false);
       setCustomerSuccess("✓ Google Account verified: Aryan Gupta (aryan.demo@gmail.com)");
       setTimeout(() => {
-        navigate(redirectPath || "/customer");
-      }, 500);
-    }, 900);
+        navigate(redirectPath || "/customer", { replace: true });
+      }, 600);
+    }, 850);
   };
 
   return (
@@ -186,38 +315,69 @@ export default function Login() {
             <span>Sahāyu</span>
           </div>
           <h1>
-            Secure <span>Portal Access</span>
+            {authMode === "signup" ? "Create Your" : "Access Your"}{" "}
+            <span>{activeRole === "worker" ? "Worker Desk" : "Customer Portal"}</span>
           </h1>
           <p className="login-description">
-            Cooperative-powered services with e-Shram integration & fair labour floor.
+            Cooperative-powered services with e-Shram identity validation & guaranteed fair wages.
           </p>
+        </div>
+
+        {/* Mode Switcher (Login vs Sign Up) */}
+        <div className="auth-mode-switcher">
+          <button
+            type="button"
+            className={`auth-mode-btn ${authMode === "login" ? "active" : ""}`}
+            onClick={() => handleModeChange("login")}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            className={`auth-mode-btn ${authMode === "signup" ? "active" : ""}`}
+            onClick={() => handleModeChange("signup")}
+          >
+            Sign Up / Register
+          </button>
         </div>
 
         {/* Role Selector Tabs */}
         <div className="auth-role-tabs">
           <button
             type="button"
-            className={`auth-role-tab ${activeTab === "customer" ? "active" : ""}`}
-            onClick={() => handleTabChange("customer")}
+            className={`auth-role-tab ${activeRole === "customer" ? "active" : ""}`}
+            onClick={() => handleRoleChange("customer")}
           >
             🏠 Customer Portal
           </button>
           <button
             type="button"
-            className={`auth-role-tab ${activeTab === "worker" ? "active" : ""}`}
-            onClick={() => handleTabChange("worker")}
+            className={`auth-role-tab ${activeRole === "worker" ? "active" : ""}`}
+            onClick={() => handleRoleChange("worker")}
           >
             👨‍🔧 Worker Portal
           </button>
         </div>
 
-        {/* WORKER AUTHENTICATION FLOW */}
-        {activeTab === "worker" && (
+        {/* =========================================================================
+            WORKER AUTHENTICATION (LOGIN & SIGN UP)
+            ========================================================================= */}
+        {activeRole === "worker" && (
           <div className="auth-form-container">
             <div className="auth-flow-info-box">
-              <span className="auth-flow-tag">WORKER AUTHENTICATION</span>
-              <h3>e-Shram + Mobile OTP Verification</h3>
-              <p>Enter your 12-digit National e-Shram UAN and registered mobile number.</p>
+              <span className="auth-flow-tag">
+                {authMode === "signup" ? "WORKER COOPERATIVE REGISTRATION" : "WORKER AUTHENTICATION"}
+              </span>
+              <h3>
+                {authMode === "signup"
+                  ? "Join as an e-Shram Verified Professional"
+                  : "e-Shram UAN + Mobile OTP Login"}
+              </h3>
+              <p>
+                {authMode === "signup"
+                  ? "Enter your National e-Shram details and trade skill to start receiving community bookings."
+                  : "Enter your registered 12-digit e-Shram UAN and phone number to sign in."}
+              </p>
             </div>
 
             {workerError && (
@@ -234,6 +394,27 @@ export default function Login() {
 
             {!workerOtpSent ? (
               <form onSubmit={handleWorkerSendOtp} className="auth-form">
+                {authMode === "signup" && (
+                  <div className="form-group">
+                    <label htmlFor="workerName">
+                      Full Legal Name <span className="req">*</span>
+                    </label>
+                    <input
+                      id="workerName"
+                      type="text"
+                      placeholder="e.g. Arvind Gupta"
+                      value={workerName}
+                      onChange={(e) => {
+                        setWorkerName(e.target.value);
+                        if (workerError) setWorkerError("");
+                      }}
+                      required
+                      className="auth-input"
+                      autoComplete="name"
+                    />
+                  </div>
+                )}
+
                 <div className="form-group">
                   <label htmlFor="workerEshram">
                     12-digit e-Shram UAN ID <span className="req">*</span>
@@ -250,9 +431,7 @@ export default function Login() {
                     className="auth-input"
                     autoComplete="off"
                   />
-                  <small className="input-hint">
-                    {workerEshram.length}/12 digits entered
-                  </small>
+                  <small className="input-hint">{workerEshram.length}/12 digits entered</small>
                 </div>
 
                 <div className="form-group">
@@ -267,27 +446,75 @@ export default function Login() {
                       inputMode="numeric"
                       placeholder="9876543210"
                       value={workerPhone}
-                      onChange={handlePhoneChange}
+                      onChange={handleWorkerPhoneChange}
                       maxLength={10}
                       required
                       className="auth-input phone-field"
                       autoComplete="tel"
                     />
                   </div>
-                  <small className="input-hint">
-                    {workerPhone.length}/10 digits entered
-                  </small>
+                  <small className="input-hint">{workerPhone.length}/10 digits entered</small>
                 </div>
+
+                {authMode === "signup" && (
+                  <div className="form-row-2col">
+                    <div className="form-group">
+                      <label htmlFor="workerSkill">
+                        Primary Trade Skill <span className="req">*</span>
+                      </label>
+                      <select
+                        id="workerSkill"
+                        value={workerSkill}
+                        onChange={(e) => setWorkerSkill(e.target.value)}
+                        className="auth-input"
+                      >
+                        {skillsList.length > 0 ? (
+                          skillsList.map((s) => (
+                            <option key={s.skill_id || s.id} value={s.skill_name || s.name}>
+                              {s.skill_name || s.name}
+                            </option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="Electrician">Electrician</option>
+                            <option value="Plumber">Plumber</option>
+                            <option value="Carpenter">Carpenter</option>
+                            <option value="Gardener">Gardener</option>
+                            <option value="Sanitation Specialist">Sanitation Specialist</option>
+                            <option value="Appliance Technician">Appliance Technician</option>
+                          </>
+                        )}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="workerExp">
+                        Experience (Years) <span className="req">*</span>
+                      </label>
+                      <input
+                        id="workerExp"
+                        type="number"
+                        min="1"
+                        max="40"
+                        value={workerExp}
+                        onChange={(e) => setWorkerExp(e.target.value)}
+                        className="auth-input"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <button
                   type="submit"
                   className="primary-btn full-btn auth-submit-btn"
-                  disabled={workerSendingOtp || workerEshram.length !== 12 || workerPhone.length !== 10}
+                  disabled={workerLoading || workerEshram.length !== 12 || workerPhone.length !== 10}
                 >
-                  {workerSendingOtp ? (
+                  {workerLoading ? (
                     <span className="btn-spinner-label">
-                      <span className="btn-inline-spinner"></span> Sending OTP...
+                      <span className="btn-inline-spinner"></span> Validating e-Shram...
                     </span>
+                  ) : authMode === "signup" ? (
+                    "Verify e-Shram & Send OTP →"
                   ) : (
                     "Send Verification OTP →"
                   )}
@@ -296,7 +523,9 @@ export default function Login() {
             ) : (
               <form onSubmit={handleWorkerVerify} className="auth-form">
                 <div className="auth-sent-badge">
-                  <span>📱 Verification OTP requested for: <strong>+91 {workerPhone}</strong></span>
+                  <span>
+                    📱 OTP requested for: <strong>+91 {workerPhone}</strong>
+                  </span>
                   <button
                     type="button"
                     className="text-btn"
@@ -334,12 +563,14 @@ export default function Login() {
                 <button
                   type="submit"
                   className="primary-btn full-btn auth-submit-btn"
-                  disabled={workerVerifying || workerOtp.length !== 4}
+                  disabled={workerLoading || workerOtp.length !== 4}
                 >
-                  {workerVerifying ? (
+                  {workerLoading ? (
                     <span className="btn-spinner-label">
-                      <span className="btn-inline-spinner"></span> Verifying Credentials...
+                      <span className="btn-inline-spinner"></span> Finalizing Worker Desk...
                     </span>
+                  ) : authMode === "signup" ? (
+                    "✓ Complete Registration & Open Desk"
                   ) : (
                     "✓ Verify & Open Worker Desk"
                   )}
@@ -349,13 +580,25 @@ export default function Login() {
           </div>
         )}
 
-        {/* CUSTOMER AUTHENTICATION FLOW */}
-        {activeTab === "customer" && (
+        {/* =========================================================================
+            CUSTOMER AUTHENTICATION (LOGIN & SIGN UP)
+            ========================================================================= */}
+        {activeRole === "customer" && (
           <div className="auth-form-container">
             <div className="auth-flow-info-box customer-box">
-              <span className="auth-flow-tag customer-tag">CUSTOMER ACCESS</span>
-              <h3>Quick Sign-In / Registration</h3>
-              <p>Sign in with Google or your email to book trusted cooperative services.</p>
+              <span className="auth-flow-tag customer-tag">
+                {authMode === "signup" ? "CUSTOMER REGISTRATION" : "CUSTOMER ACCESS"}
+              </span>
+              <h3>
+                {authMode === "signup"
+                  ? "Create a Household Account"
+                  : "Quick Sign-In to Book Services"}
+              </h3>
+              <p>
+                {authMode === "signup"
+                  ? "Register to book verified cooperative technicians with transparent pricing and 72h warranty."
+                  : "Sign in with Google or your email address to manage your household service bookings."}
+              </p>
             </div>
 
             {customerError && (
@@ -395,7 +638,13 @@ export default function Login() {
                   d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.27 2.64 1.26 6.58l4.02 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
                 />
               </svg>
-              <span>{googleSigningIn ? "Signing in with Google..." : "Continue with Google"}</span>
+              <span>
+                {googleSigningIn
+                  ? "Signing in with Google..."
+                  : authMode === "signup"
+                  ? "Sign Up with Google"
+                  : "Continue with Google"}
+              </span>
             </button>
 
             <div className="auth-divider">
@@ -404,6 +653,47 @@ export default function Login() {
 
             {!customerOtpSent ? (
               <form onSubmit={handleCustomerSendOtp} className="auth-form">
+                {authMode === "signup" && (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="customerName">
+                        Full Name <span className="req">*</span>
+                      </label>
+                      <input
+                        id="customerName"
+                        type="text"
+                        placeholder="e.g. Aryan Gupta"
+                        value={customerName}
+                        onChange={(e) => {
+                          setCustomerName(e.target.value);
+                          if (customerError) setCustomerError("");
+                        }}
+                        required
+                        className="auth-input"
+                        autoComplete="name"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="customerPhone">Mobile Number (Optional)</label>
+                      <div className="phone-input-wrapper">
+                        <span className="phone-prefix">+91</span>
+                        <input
+                          id="customerPhone"
+                          type="tel"
+                          inputMode="numeric"
+                          placeholder="9876543210"
+                          value={customerPhone}
+                          onChange={handleCustomerPhoneChange}
+                          maxLength={10}
+                          className="auth-input phone-field"
+                          autoComplete="tel"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 <div className="form-group">
                   <label htmlFor="customerEmail">
                     Email Address <span className="req">*</span>
@@ -426,12 +716,14 @@ export default function Login() {
                 <button
                   type="submit"
                   className="primary-btn full-btn auth-submit-btn"
-                  disabled={customerSendingOtp || !customerEmail.trim()}
+                  disabled={customerLoading || !customerEmail.trim()}
                 >
-                  {customerSendingOtp ? (
+                  {customerLoading ? (
                     <span className="btn-spinner-label">
                       <span className="btn-inline-spinner"></span> Sending OTP...
                     </span>
+                  ) : authMode === "signup" ? (
+                    "Register & Send Verification OTP →"
                   ) : (
                     "Send Verification OTP →"
                   )}
@@ -440,7 +732,9 @@ export default function Login() {
             ) : (
               <form onSubmit={handleCustomerVerify} className="auth-form">
                 <div className="auth-sent-badge">
-                  <span>✉️ Verification OTP requested for: <strong>{customerEmail}</strong></span>
+                  <span>
+                    ✉️ OTP requested for: <strong>{customerEmail}</strong>
+                  </span>
                   <button
                     type="button"
                     className="text-btn"
@@ -478,12 +772,14 @@ export default function Login() {
                 <button
                   type="submit"
                   className="primary-btn full-btn auth-submit-btn"
-                  disabled={customerVerifying || customerOtp.length !== 4}
+                  disabled={customerLoading || customerOtp.length !== 4}
                 >
-                  {customerVerifying ? (
+                  {customerLoading ? (
                     <span className="btn-spinner-label">
                       <span className="btn-inline-spinner"></span> Verifying Customer Session...
                     </span>
+                  ) : authMode === "signup" ? (
+                    "✓ Complete Registration & Continue"
                   ) : (
                     "✓ Verify & Open Customer Portal"
                   )}
@@ -493,7 +789,7 @@ export default function Login() {
           </div>
         )}
 
-        {/* Cooperative Admin Desk Entry (Unchanged Admin Route) */}
+        {/* Cooperative Admin Desk Entry (Preserved Admin Route) */}
         <div className="admin-portal-link-box">
           <button
             type="button"

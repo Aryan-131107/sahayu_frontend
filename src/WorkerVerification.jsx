@@ -6,6 +6,7 @@ import {
   getStoredVerification,
   setStoredVerification,
 } from "./api";
+import { isWorkerAuthenticated } from "./auth";
 import "./App.css";
 
 function WorkerVerification() {
@@ -14,8 +15,7 @@ function WorkerVerification() {
 
   // Authentication Guard: Ensure worker has verified session
   useEffect(() => {
-    const isWorkerAuth = sessionStorage.getItem("sahayu_worker_auth") === "true";
-    if (!isWorkerAuth) {
+    if (!isWorkerAuthenticated()) {
       navigate("/login?role=worker&redirect=/worker/verification", { replace: true });
     }
   }, [navigate]);

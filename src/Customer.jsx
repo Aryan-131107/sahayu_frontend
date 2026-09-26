@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getServices } from "./api";
+import { isCustomerAuthenticated } from "./auth";
 import "./App.css";
 
 function Customer() {
@@ -9,8 +10,7 @@ function Customer() {
 
   // Authentication Guard: Ensure customer has verified session
   useEffect(() => {
-    const isCustomerAuth = sessionStorage.getItem("sahayu_customer_auth") === "true";
-    if (!isCustomerAuth) {
+    if (!isCustomerAuthenticated()) {
       navigate("/login?role=customer&redirect=/customer", { replace: true });
     }
   }, [navigate]);

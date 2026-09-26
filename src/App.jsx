@@ -1,3 +1,4 @@
+import { useState } from "react";
 import "./App.css";
 
 import Worker from "./Worker";
@@ -22,6 +23,12 @@ import ServiceHeroSlider from "./ServiceHeroSlider";
 
 function Home() {
   const navigate = useNavigate();
+  const [lang, setLang] = useState(() => localStorage.getItem("sahayu_lang") || "EN");
+
+  const toggleLang = (newLang) => {
+    setLang(newLang);
+    localStorage.setItem("sahayu_lang", newLang);
+  };
 
   return (
     <div className="app">
@@ -34,18 +41,57 @@ function Home() {
         </div>
 
         <div className="nav-links">
-          <a href="#services">Services</a>
-          <a href="#how-it-works">How It Works</a>
-          <a href="#workers">For Workers</a>
-          <a href="#about">About Us</a>
+          <a href="#services">{lang === "HI" ? "सेवाएं" : "Services"}</a>
+          <a href="#how-it-works">{lang === "HI" ? "यह कैसे काम करता है" : "How It Works"}</a>
+          <a href="#workers">{lang === "HI" ? "श्रमिकों के लिए" : "For Workers"}</a>
+          <a href="#about">{lang === "HI" ? "हमारे बारे में" : "About Us"}</a>
         </div>
 
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          <div className="lang-selector-toggle" style={{ display: "inline-flex", alignItems: "center", background: "#f1f5f9", borderRadius: "20px", padding: "2px 6px", border: "1px solid #cbd5e1", fontSize: "13px" }}>
+            <span style={{ marginRight: "4px", fontSize: "13px" }}>🌐</span>
+            <button
+              type="button"
+              onClick={() => toggleLang("EN")}
+              style={{
+                background: lang === "EN" ? "#1d6b55" : "transparent",
+                color: lang === "EN" ? "#fff" : "#475569",
+                border: "none",
+                borderRadius: "12px",
+                padding: "2px 7px",
+                fontSize: "12px",
+                fontWeight: 700,
+                cursor: "pointer",
+                transition: "all 0.15s ease"
+              }}
+            >
+              EN
+            </button>
+            <span style={{ color: "#94a3b8", margin: "0 2px" }}>|</span>
+            <button
+              type="button"
+              onClick={() => toggleLang("HI")}
+              style={{
+                background: lang === "HI" ? "#1d6b55" : "transparent",
+                color: lang === "HI" ? "#fff" : "#475569",
+                border: "none",
+                borderRadius: "12px",
+                padding: "2px 7px",
+                fontSize: "12px",
+                fontWeight: 700,
+                cursor: "pointer",
+                transition: "all 0.15s ease"
+              }}
+            >
+              हिन्दी
+            </button>
+          </div>
+
           <button
             className="login-btn"
             onClick={() => navigate("/login")}
           >
-            Portal Login
+            {lang === "HI" ? "पोर्टल लॉगिन" : "Portal Login"}
           </button>
         </div>
       </nav>

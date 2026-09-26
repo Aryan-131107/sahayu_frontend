@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { getWorker, getService, createBooking } from "./api";
+import { isCustomerAuthenticated } from "./auth";
 import ServiceMap from "./ServiceMap";
 import "./App.css";
 
@@ -11,8 +12,7 @@ function Booking() {
 
   // Authentication Guard: Ensure customer has verified session
   useEffect(() => {
-    const isCustomerAuth = sessionStorage.getItem("sahayu_customer_auth") === "true";
-    if (!isCustomerAuth) {
+    if (!isCustomerAuthenticated()) {
       navigate("/login?role=customer&redirect=/booking", { replace: true });
     }
   }, [navigate]);

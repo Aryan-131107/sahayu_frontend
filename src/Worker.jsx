@@ -5,6 +5,7 @@ import {
   getWorkers,
   updateWorkerAvailability,
   getBooking,
+  getWorkerBookings,
   getCustomerBookings,
   acceptBooking,
   verifyStartOtp,
@@ -19,6 +20,7 @@ import {
   saveBookingWarranty,
   completeBooking,
 } from "./api";
+import { getAuthSession, clearAuthSession } from "./auth";
 import WarrantyCountdown from "./WarrantyCountdown";
 import VoiceAssistant from "./VoiceAssistant";
 import "./App.css";
@@ -26,17 +28,26 @@ import "./App.css";
 function Worker() {
   const navigate = useNavigate();
 
-  // Authentication Guard: Ensure worker has verified session
+  // Authentication Guard: Ensure authenticated Worker session
   useEffect(() => {
-    const isWorkerAuth = sessionStorage.getItem("sahayu_worker_auth") === "true";
-    if (!isWorkerAuth) {
+    const session = getAuthSession();
+    const legacyWorkerAuth = sessionStorage.getItem("sahayu_worker_auth") === "true";
+    if (!session && !legacyWorkerAuth) {
+      navigate("/login?role=worker&redirect=/worker", { replace: true });
+    } else if (session && session.role !== "worker") {
+      // Prevent cross-role access if logged in as customer
       navigate("/login?role=worker&redirect=/worker", { replace: true });
     }
   }, [navigate]);
 
-  const [workerId, setWorkerId] = useState(
-    () => localStorage.getItem("sahayu_worker_id") || "11"
-  );
+  const [workerId, setWorkerId] = useState(() => {
+    const session = getAuthSession();
+    if (session && session.role === "worker" && session.user?.id) {
+      return String(session.user.id);
+    }
+    return localStorage.getItem("sahayu_worker_id") || "11";
+  });
+
   const [worker, setWorker] = useState(null);
   const [workersList, setWorkersList] = useState([]);
   const [loadingWorker, setLoadingWorker] = useState(true);
@@ -74,9 +85,10 @@ function Worker() {
     setWorkerError("");
 
     try {
-      const [workerData, allWorkers, bookingsList] = await Promise.all([
+      const [workerData, allWorkers, workerBookingsList, customerBookingsList] = await Promise.all([
         getWorker(id).catch(() => null),
         getWorkers(false).catch(() => []),
+        getWorkerBookings(id).catch(() => []),
         getCustomerBookings(1).catch(() => []),
       ]);
 
@@ -86,27 +98,39 @@ function Worker() {
       }
       setWorkersList(Array.isArray(allWorkers) ? allWorkers : []);
 
-      // Find any active job assigned to this worker or latest job in queue
-      if (Array.isArray(bookingsList) && bookingsList.length > 0) {
-        const workerJob =
-          bookingsList.find(
-            (b) =>
-              String(b.worker_id) === String(id) &&
-              ["PENDING", "ACCEPTED", "IN_PROGRESS"].includes(b.status)
-          ) ||
-          bookingsList.find((b) => String(b.worker_id) === String(id)) ||
-          bookingsList[0];
+      // Combine and prioritize bookings assigned specifically to this worker
+      const combined = [
+        ...(Array.isArray(workerBookingsList) ? workerBookingsList : []),
+        ...(Array.isArray(customerBookingsList) ? customerBookingsList : []),
+      ];
 
-        if (workerJob) {
-          try {
-            const freshBooking = await getBooking(workerJob.booking_id);
-            setActiveJob(freshBooking);
-          } catch {
-            setActiveJob(workerJob);
-          }
+      // Filter bookings that belong strictly to this worker
+      const workerSpecificBookings = combined.filter(
+        (b) => String(b.worker_id) === String(id)
+      );
+
+      // Find active in-flight booking or latest assigned order
+      const activeOrder =
+        workerSpecificBookings.find((b) =>
+          ["ASSIGNED", "PENDING", "ACCEPTED", "IN_PROGRESS", "PAYMENT_PENDING"].includes(
+            (b.status || "").toUpperCase()
+          )
+        ) ||
+        workerSpecificBookings[0] ||
+        null;
+
+      if (activeOrder) {
+        try {
+          const freshBooking = await getBooking(activeOrder.booking_id);
+          setActiveJob(freshBooking || activeOrder);
+        } catch {
+          setActiveJob(activeOrder);
         }
+      } else {
+        setActiveJob(null);
       }
     } catch (err) {
+      console.error("[Worker Load Error]", err);
       setWorkerError(err.message || "Failed to load worker profile.");
     } finally {
       setLoadingWorker(false);
@@ -114,50 +138,8 @@ function Worker() {
   }, []);
 
   useEffect(() => {
-    let isMounted = true;
-    Promise.all([
-      getWorker(workerId).catch(() => null),
-      getWorkers(false).catch(() => []),
-      getCustomerBookings(1).catch(() => []),
-    ]).then(async ([workerData, allWorkers, bookingsList]) => {
-      if (!isMounted) return;
-      if (workerData) {
-        setWorker(workerData);
-        localStorage.setItem("sahayu_worker_id", String(workerId));
-      }
-      setWorkersList(Array.isArray(allWorkers) ? allWorkers : []);
-
-      if (Array.isArray(bookingsList) && bookingsList.length > 0) {
-        const workerJob =
-          bookingsList.find(
-            (b) =>
-              String(b.worker_id) === String(workerId) &&
-              ["PENDING", "ACCEPTED", "IN_PROGRESS"].includes(b.status)
-          ) ||
-          bookingsList.find((b) => String(b.worker_id) === String(workerId)) ||
-          bookingsList[0];
-
-        if (workerJob) {
-          try {
-            const freshBooking = await getBooking(workerJob.booking_id);
-            if (isMounted) setActiveJob(freshBooking);
-          } catch {
-            if (isMounted) setActiveJob(workerJob);
-          }
-        }
-      }
-      if (isMounted) setLoadingWorker(false);
-    }).catch((err) => {
-      if (isMounted) {
-        setWorkerError(err.message || "Failed to load worker profile.");
-        setLoadingWorker(false);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [workerId]);
+    loadWorkerData(workerId);
+  }, [workerId, loadWorkerData]);
 
   const handleToggleAvailability = async () => {
     if (!worker) return;
@@ -179,14 +161,14 @@ function Worker() {
 
   // Job Queue Actions
   const handleAcceptJob = async () => {
-    if (!activeJob) return;
-    if ((activeJob.status || "").toUpperCase() !== "ASSIGNED") {
+    if (!activeJob || jobActionLoading) return;
+
+    const currentStatus = (activeJob.status || "").toUpperCase();
+    if (currentStatus !== "ASSIGNED" && currentStatus !== "PENDING") {
       try {
         const fresh = await getBooking(activeJob.booking_id);
-        setActiveJob(fresh);
-      } catch {
-        // Handled
-      }
+        if (fresh) setActiveJob(fresh);
+      } catch {}
       return;
     }
 
@@ -197,18 +179,18 @@ function Worker() {
 
     try {
       const updated = await acceptBooking(activeJob.booking_id);
-      setActiveJob(updated);
-      setJobMessage(`✓ Job #${activeJob.booking_id} accepted! Status updated to WORKER ARRIVED.`);
+      if (updated) {
+        setActiveJob(updated);
+        setJobMessage(`✓ Job #${activeJob.booking_reference || activeJob.booking_id} accepted! Status updated to WORKER ARRIVED.`);
+      }
     } catch (err) {
+      console.error("[Worker Accept Failure]", err);
+      setJobError(err.message || `Failed to accept booking #${activeJob.booking_id}. Backend returned error.`);
+      // Refresh latest state from server to reflect true status
       try {
         const fresh = await getBooking(activeJob.booking_id);
-        setActiveJob(fresh);
-      } catch {
-        // Handled
-      }
-      if ((activeJob.status || "").toUpperCase() === "ASSIGNED") {
-        setJobError(err.message || "Failed to accept booking.");
-      }
+        if (fresh) setActiveJob(fresh);
+      } catch {}
     } finally {
       setJobActionLoading(false);
     }
