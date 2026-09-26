@@ -23,6 +23,7 @@ import {
 import { getAuthSession, clearAuthSession } from "./auth";
 import WarrantyCountdown from "./WarrantyCountdown";
 import VoiceAssistant from "./VoiceAssistant";
+import DemoUpiQr from "./DemoUpiQr";
 import "./App.css";
 
 function Worker() {
@@ -61,6 +62,7 @@ function Worker() {
   const [verifyingEnd, setVerifyingEnd] = useState(false);
   const [isPaymentPending, setIsPaymentPending] = useState(false);
   const [payingDemo, setPayingDemo] = useState(false);
+  const [showDemoQrModal, setShowDemoQrModal] = useState(false);
   const [jobMessage, setJobMessage] = useState("");
   const [jobError, setJobError] = useState("");
   const [shakeStart, setShakeStart] = useState(false);
@@ -68,13 +70,54 @@ function Worker() {
   const [consensusSuccess, setConsensusSuccess] = useState(null);
 
   // Quotation Builder State (On-Site Inspection)
-  const [, setQuoteVersion] = useState(0);
+  const [quoteVersion, setQuoteVersion] = useState(0);
   const [showQuoteBuilder, setShowQuoteBuilder] = useState(false);
   const [selectedItems, setSelectedItems] = useState([]);
   const [quoteSuccessMsg, setQuoteSuccessMsg] = useState("");
 
-  const quotation = activeJob?.booking_id ? getBookingQuotation(activeJob.booking_id) : null;
+  const quotation = useMemo(() => {
+    return activeJob?.booking_id ? getBookingQuotation(activeJob.booking_id) : null;
+  }, [activeJob?.booking_id, quoteVersion]);
+
   const currentRateCard = useMemo(() => getRateCardForBooking(activeJob), [activeJob]);
+
+  // Real-time synchronization of quotation and backend booking state
+  useEffect(() => {
+    if (!activeJob?.booking_id) return;
+
+    const handleStorage = (e) => {
+      if (
+        e.key === `sahayu_quotation_${activeJob.booking_id}` ||
+        e.key === `sahayu_payment_${activeJob.booking_id}`
+      ) {
+        setQuoteVersion((v) => v + 1);
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+
+    // Polling interval (every 2.5s) to check quotation and fresh booking status
+    const interval = setInterval(async () => {
+      setQuoteVersion((v) => v + 1);
+
+      const st = (activeJob.status || "").toUpperCase();
+      if (["ASSIGNED", "PENDING", "ACCEPTED", "IN_PROGRESS", "PAYMENT_PENDING"].includes(st)) {
+        try {
+          const fresh = await getBooking(activeJob.booking_id);
+          if (fresh && fresh.status && fresh.status !== activeJob.status) {
+            setActiveJob(fresh);
+          }
+        } catch {
+          // Polling fallback
+        }
+      }
+    }, 2500);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      clearInterval(interval);
+    };
+  }, [activeJob?.booking_id, activeJob?.status]);
 
   // OTP inputs for starting and ending service
   const [enteredStartOtp, setEnteredStartOtp] = useState("");
@@ -778,6 +821,33 @@ function Worker() {
                       </div>
                     )}
 
+                    {/* 1. Worker Approval Notification (Backend/Sync confirmed) */}
+                    {quotation && quotation.status === "APPROVED" && (
+                      <div
+                        className="worker-approval-notice"
+                        style={{
+                          background: "#ecfdf5",
+                          border: "1.5px solid #059669",
+                          borderRadius: "10px",
+                          padding: "14px 18px",
+                          marginBottom: "16px",
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "12px",
+                        }}
+                      >
+                        <span style={{ fontSize: "22px", color: "#059669", lineHeight: 1 }}>✓</span>
+                        <div>
+                          <strong style={{ display: "block", color: "#065f46", fontSize: "14px" }}>
+                            Customer approved additional work (+₹{quotation.additional_amount})
+                          </strong>
+                          <p style={{ margin: "2px 0 0", color: "#047857", fontSize: "13px" }}>
+                            Customer has approved the additional work. You can now complete the job using the Completion OTP.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {/* On-Site Inspection & Quotation Card */}
                     <div className="quotation-panel-card" style={{ marginBottom: "20px" }}>
                       <div className="quotation-panel-header">
@@ -963,78 +1033,119 @@ function Worker() {
                       )}
                     </div>
 
-                    {/* Step 2: Completion PIN Handshake Form */}
-                    <div className="job-step-action-box in-progress-box">
-                      <div className="otp-action-header">
-                        <strong>🔒 Step 2: Enter Completion PIN (Customer Code: {activeJob.end_otp || activeJob.completion_otp || "9134"})</strong>
-                        <p>
-                          Once all physical work is finished and verified by customer, enter their Completion PIN to validate completion.
-                        </p>
+                    {/* Step 2: Completion PIN Handshake Form with Approval-Aware Visibility */}
+                    {quotation && quotation.status === "PENDING_APPROVAL" ? (
+                      <div
+                        className="job-step-action-box in-progress-box"
+                        style={{
+                          background: "#fffbeb",
+                          border: "1.5px dashed #f59e0b",
+                          borderRadius: "10px",
+                          padding: "16px",
+                        }}
+                      >
+                        <div className="otp-action-header">
+                          <strong style={{ color: "#92400e", display: "flex", alignItems: "center", gap: "6px" }}>
+                            🔒 Step 2: Completion PIN (Locked · Awaiting Customer Approval)
+                          </strong>
+                          <p style={{ color: "#b45309", marginTop: "4px" }}>
+                            Additional work quotation is currently pending customer approval. The Completion PIN section will unlock automatically once the customer approves the quotation.
+                          </p>
+                        </div>
                       </div>
+                    ) : (
+                      <div className="job-step-action-box in-progress-box">
+                        <div className="otp-action-header">
+                          <strong>🔒 Step 2: Enter Completion PIN (Customer Code: {activeJob.end_otp || activeJob.completion_otp || "9134"})</strong>
+                          <p>
+                            Once all physical work is finished and verified by customer, enter their Completion PIN to validate completion.
+                          </p>
+                        </div>
 
-                      <form onSubmit={handleCompleteJob} className={`otp-inline-form ${shakeEnd ? "shake-anim" : ""}`}>
-                        <input
-                          type="text"
-                          maxLength={4}
-                          placeholder="Enter 4-digit Completion PIN (e.g. 9134)"
-                          value={enteredEndOtp}
-                          onChange={(e) => setEnteredEndOtp(e.target.value.replace(/\D/g, ""))}
-                          disabled={verifyingEnd}
-                          className="form-control otp-input"
-                          autoComplete="off"
-                          required
-                        />
-                        <button
-                          type="submit"
-                          className="primary-btn"
-                          disabled={verifyingEnd}
-                        >
-                          {verifyingEnd ? "⟳ Verifying Completion PIN..." : "Verify Completion PIN"}
-                        </button>
-                      </form>
-                    </div>
+                        <form onSubmit={handleCompleteJob} className={`otp-inline-form ${shakeEnd ? "shake-anim" : ""}`}>
+                          <input
+                            type="text"
+                            maxLength={4}
+                            placeholder="Enter 4-digit Completion PIN (e.g. 9134)"
+                            value={enteredEndOtp}
+                            onChange={(e) => setEnteredEndOtp(e.target.value.replace(/\D/g, ""))}
+                            disabled={verifyingEnd}
+                            className="form-control otp-input"
+                            autoComplete="off"
+                            required
+                          />
+                          <button
+                            type="submit"
+                            className="primary-btn"
+                            disabled={verifyingEnd}
+                          >
+                            {verifyingEnd ? "⟳ Verifying Completion PIN..." : "Verify Completion PIN"}
+                          </button>
+                        </form>
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Status: PAYMENT_PENDING -> Payment Demo */}
+                {/* Status: PAYMENT_PENDING -> Payment Demo with Demo QR */}
                 {normStatus === "PAYMENT_PENDING" && (
-                  <div className="job-step-action-box payment-pending-box" style={{ background: "#f8fafc", border: "2px solid #059669", borderRadius: "10px", padding: "16px", marginBottom: "16px" }}>
+                  <div className="job-step-action-box payment-pending-box" style={{ background: "#f8fafc", border: "2px solid #059669", borderRadius: "12px", padding: "18px", marginBottom: "16px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                      <strong style={{ fontSize: "15px", color: "#0f172a" }}>💳 Payment Demo</strong>
+                      <strong style={{ fontSize: "16px", color: "#0f172a", display: "flex", alignItems: "center", gap: "8px" }}>
+                        💳 Payment Settlement
+                      </strong>
                       <span className="status-badge yellow" style={{ fontSize: "11px", padding: "3px 8px" }}>
                         AWAITING PAYMENT
                       </span>
                     </div>
 
-                    <p style={{ fontSize: "12px", color: "#475569", margin: "0 0 12px" }}>
-                      Completion PIN verified! Confirm or simulate customer payment for the final amount.
+                    <p style={{ fontSize: "13px", color: "#475569", margin: "0 0 14px" }}>
+                      Completion PIN verified! Settle the final amount to disburse 100% labour floor to your cooperative wallet.
                     </p>
 
-                    <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px", marginBottom: "14px", fontSize: "13px" }}>
+                    <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "14px", marginBottom: "16px", fontSize: "13px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", color: "#475569", marginBottom: "6px" }}>
-                        <span>Initial Inspection / Booking</span>
+                        <span>Initial Inspection / Booking Floor</span>
                         <span>₹239</span>
                       </div>
                       {quotation && quotation.status === "APPROVED" && (
                         <div style={{ display: "flex", justifyContent: "space-between", color: "#059669", fontWeight: 600, marginBottom: "6px" }}>
-                          <span>Approved Add-ons</span>
+                          <span>Approved Add-ons ({quotation.items?.map(i => i.name || i.title).join(", ")})</span>
                           <span>+₹{quotation.additional_amount}</span>
                         </div>
                       )}
-                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, color: "#0f172a", borderTop: "1px solid #e2e8f0", paddingTop: "8px", marginTop: "4px", fontSize: "14px" }}>
-                        <span>Final Amount</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, color: "#0f172a", borderTop: "1px solid #e2e8f0", paddingTop: "8px", marginTop: "4px", fontSize: "15px" }}>
+                        <span>Final Settlement Amount</span>
                         <strong style={{ color: "#059669" }}>₹{calculatePayableTotal()}</strong>
                       </div>
+                    </div>
+
+                    {/* Demo QR Box */}
+                    <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "10px", padding: "16px", textAlign: "center", marginBottom: "16px" }}>
+                      <div style={{ display: "inline-block", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 800, padding: "2px 8px", borderRadius: "6px", marginBottom: "8px" }}>
+                        DEMO PAYMENT QR · SIMULATION ONLY
+                      </div>
+                      <h4 style={{ margin: "0 0 4px", fontSize: "14px", color: "#0f172a" }}>
+                        Scan to Pay ₹{calculatePayableTotal()}
+                      </h4>
+                      <p style={{ fontSize: "11px", color: "#64748b", margin: "0 0 12px" }}>
+                        Simulation only — no real payment will be processed.
+                      </p>
+                      <DemoUpiQr
+                        amount={calculatePayableTotal()}
+                        orderId={activeJob.booking_reference || `SH-00${activeJob.booking_id}`}
+                        size={150}
+                      />
                     </div>
 
                     <button
                       type="button"
                       className="primary-btn full-btn"
-                      style={{ width: "100%", padding: "10px 14px", background: "#059669", borderColor: "#059669", fontSize: "13px", fontWeight: 700 }}
+                      style={{ width: "100%", padding: "12px 14px", background: "#059669", borderColor: "#059669", fontSize: "14px", fontWeight: 700 }}
                       onClick={handleSimulatePayment}
                       disabled={payingDemo}
                     >
-                      {payingDemo ? "⟳ Processing Payment..." : `[ Simulate Payment ₹${calculatePayableTotal()} ]`}
+                      {payingDemo ? "⟳ Processing Demo Settlement..." : `✓ Confirm Demo Payment (₹${calculatePayableTotal()})`}
                     </button>
                   </div>
                 )}

@@ -13,6 +13,7 @@ import {
   getAllStoredVerifications,
   getGullakSummary,
 } from "./api";
+import { getAuthSession, setAuthSession, clearAuthSession } from "./auth";
 import "./App.css";
 
 // 1. Error Boundary to prevent any blank-screen failure
@@ -87,9 +88,11 @@ function AdminDashboardContent() {
   const activeTab = validTabs.includes(cleanPath) ? cleanPath : "overview";
 
   // Admin authorization state
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(
-    () => sessionStorage.getItem("sahayu_admin_auth") === "true"
-  );
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
+    const session = getAuthSession();
+    if (session && session.role === "admin") return true;
+    return sessionStorage.getItem("sahayu_admin_auth") === "true";
+  });
   const [adminPin, setAdminPin] = useState("");
   const [authError, setAuthError] = useState("");
 
@@ -316,11 +319,15 @@ function AdminDashboardContent() {
   const handleAdminLogin = (e) => {
     if (e) e.preventDefault();
     if (
-      adminPin === "admin" ||
-      adminPin === "sahayu2026" ||
-      adminPin === "1234" ||
-      adminPin === ""
+      adminPin.trim() === "admin" ||
+      adminPin.trim() === "sahayu2026" ||
+      adminPin.trim() === "1234" ||
+      adminPin.trim() === ""
     ) {
+      setAuthSession({
+        role: "admin",
+        user: { id: "admin_1", name: "Federation Admin", email: "admin@sahayu.coop" },
+      });
       sessionStorage.setItem("sahayu_admin_auth", "true");
       setIsAdminAuthenticated(true);
       setAuthError("");
@@ -333,7 +340,10 @@ function AdminDashboardContent() {
 
   const handleAdminLogout = () => {
     sessionStorage.removeItem("sahayu_admin_auth");
+    localStorage.removeItem("sahayu_admin_auth");
+    clearAuthSession();
     setIsAdminAuthenticated(false);
+    navigate("/admin", { replace: true });
   };
 
   const switchTab = (tab) => {
@@ -591,6 +601,10 @@ function AdminDashboardContent() {
               type="button"
               className="quick-unlock-btn"
               onClick={() => {
+                setAuthSession({
+                  role: "admin",
+                  user: { id: "admin_1", name: "Federation Admin", email: "admin@sahayu.coop" },
+                });
                 sessionStorage.setItem("sahayu_admin_auth", "true");
                 setIsAdminAuthenticated(true);
               }}
@@ -779,6 +793,82 @@ function AdminDashboardContent() {
               {/* TAB 1: OVERVIEW & FEDERATION HEALTH */}
               {activeTab === "overview" && (
                 <div className="admin-tab-content">
+                  {/* Federation Health & Node Status Banner */}
+                  <div
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #d1fae5",
+                      borderRadius: "14px",
+                      padding: "18px 22px",
+                      marginBottom: "24px",
+                      boxShadow: "0 2px 8px rgba(5, 150, 105, 0.05)",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: "14px" }}>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{ fontSize: "18px" }}>🏛️</span>
+                          <h3 style={{ margin: 0, fontSize: "16px", color: "#065f46" }}>
+                            Federation Health Monitor · Jabalpur Cluster
+                          </h3>
+                          <span className="status-pill completed" style={{ fontSize: "11px", padding: "2px 8px" }}>
+                            ● ALL SYSTEMS OPERATIONAL
+                          </span>
+                        </div>
+                        <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#047857" }}>
+                          Real-time status across cooperative dispatch nodes, worker welfare ledgers, and identity registries.
+                        </p>
+                      </div>
+
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          style={{ padding: "6px 12px", fontSize: "12px" }}
+                          onClick={loadDashboardData}
+                        >
+                          🔄 Refresh Health Check
+                        </button>
+                        <button
+                          type="button"
+                          className="primary-btn"
+                          style={{ padding: "6px 12px", fontSize: "12px", background: "#92400e", borderColor: "#78350f" }}
+                          onClick={() => setShowGrantModal(true)}
+                        >
+                          🛡️ Authorize Emergency Grant
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Sub-Service Health Grid */}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                        gap: "10px",
+                        borderTop: "1px solid #e2e8f0",
+                        paddingTop: "12px",
+                      }}
+                    >
+                      <div style={{ background: "#f8fafc", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "12px" }}>
+                        <div style={{ color: "#64748b" }}>Dispatch Engine</div>
+                        <strong style={{ color: "#059669" }}>🟢 100% Online · Latency &lt;50ms</strong>
+                      </div>
+                      <div style={{ background: "#f8fafc", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "12px" }}>
+                        <div style={{ color: "#64748b" }}>e-Shram NDUW Gateway</div>
+                        <strong style={{ color: "#059669" }}>🟢 Connected · National Registry</strong>
+                      </div>
+                      <div style={{ background: "#f8fafc", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "12px" }}>
+                        <div style={{ color: "#64748b" }}>Gullak Mutual Pool</div>
+                        <strong style={{ color: "#d97706" }}>🪙 ₹{gullakReserveBalance} Sinking Reserve</strong>
+                      </div>
+                      <div style={{ background: "#f8fafc", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "12px" }}>
+                        <div style={{ color: "#64748b" }}>72-Hr Warranty Engine</div>
+                        <strong style={{ color: "#059669" }}>🛡️ {activeWarrantiesCount} Orders Under Watch</strong>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Top Key Metrics Ribbon (Cooperative Federation Metrics) */}
                   <div className="admin-stats-grid">
                     {/* Metric 1: Active Society Members Deployed */}
@@ -1552,21 +1642,36 @@ function AdminDashboardContent() {
                   </div>
 
                   <div className="services-admin-grid">
-                    {services.map((s) => (
-                      <div key={s.service_id} className="service-admin-card">
-                        <div className="service-admin-header">
-                          <h4>{s.service || s.service_name}</h4>
-                          <span className="service-price-pill">
-                            ₹239 Standard Floor
-                          </span>
+                    {services.map((s) => {
+                      const hasSpecificPrice = s.price !== undefined && s.price !== null && Number(s.price) > 0;
+                      const hasBasePrice = s.base_price !== undefined && s.base_price !== null && Number(s.base_price) > 0;
+                      const displayPrice = hasSpecificPrice
+                        ? `₹${s.price} Indicative Price`
+                        : hasBasePrice
+                        ? `₹${s.base_price} Base Floor`
+                        : "Initial Inspection ₹239";
+
+                      return (
+                        <div key={s.service_id} className="service-admin-card">
+                          <div className="service-admin-header">
+                            <h4>{s.service || s.service_name}</h4>
+                            <span className="service-price-pill" style={{ background: "#ecfdf5", color: "#047857", fontWeight: 700 }}>
+                              {displayPrice}
+                            </span>
+                          </div>
+                          <p className="service-desc">{s.description || "Cooperative standardized service delivery."}</p>
+                          <div className="service-meta-row" style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px", marginTop: "12px", borderTop: "1px solid #f1f5f9", paddingTop: "8px" }}>
+                            <small>Category: <strong>{s.category || "Home Care"}</strong></small>
+                            <small>Inspection: <strong>₹239 (₹199 Labour + ₹30 Plat + ₹10 Gullak)</strong></small>
+                          </div>
+                          {!hasSpecificPrice && !hasBasePrice && (
+                            <small style={{ display: "block", color: "#64748b", marginTop: "6px", fontSize: "11px" }}>
+                              * Final bill determined via on-site inspection & rate card.
+                            </small>
+                          )}
                         </div>
-                        <p className="service-desc">{s.description}</p>
-                        <div className="service-meta-row">
-                          <small>Category: {s.category || "Home Care"}</small>
-                          <small>Skill ID: #{s.skill_id || 1}</small>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

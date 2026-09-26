@@ -16,6 +16,7 @@ import { isCustomerAuthenticated } from "./auth";
 import ServiceTimeline from "./ServiceTimeline";
 import ServiceMap from "./ServiceMap";
 import WarrantyCountdown from "./WarrantyCountdown";
+import DemoUpiQr from "./DemoUpiQr";
 import "./App.css";
 
 function MyBookings() {
@@ -570,6 +571,26 @@ function MyBookings() {
                   </div>
                 </div>
 
+                {/* Dynamic Demo QR for UPI */}
+                {selectedPaymentMethod === "UPI" && (
+                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "10px", padding: "16px", textAlign: "center", marginBottom: "16px" }}>
+                    <div style={{ display: "inline-block", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 800, padding: "2px 8px", borderRadius: "6px", marginBottom: "8px" }}>
+                      DEMO PAYMENT QR · SIMULATION ONLY
+                    </div>
+                    <h4 style={{ margin: "0 0 4px", fontSize: "14px", color: "#0f172a" }}>
+                      Scan UPI QR to Settle ₹{calculateFinalPayableAmount()}
+                    </h4>
+                    <p style={{ fontSize: "11px", color: "#64748b", margin: "0 0 12px" }}>
+                      Simulation only — no real payment will be processed.
+                    </p>
+                    <DemoUpiQr
+                      amount={calculateFinalPayableAmount()}
+                      orderId={booking.booking_reference || `SH-00${booking.booking_id}`}
+                      size={140}
+                    />
+                  </div>
+                )}
+
                 <div style={{ textAlign: "right" }}>
                   <button
                     type="button"
@@ -578,7 +599,7 @@ function MyBookings() {
                     onClick={handleSimulatePayment}
                     disabled={payingDemo}
                   >
-                    {payingDemo ? "Processing Settlement..." : `✓ Demo Pay (₹${calculateFinalPayableAmount()})`}
+                    {payingDemo ? "Processing Settlement..." : `✓ Confirm Demo Pay (₹${calculateFinalPayableAmount()})`}
                   </button>
                   <p style={{ fontSize: "12px", color: "#64748b", marginTop: "6px" }}>
                     Demo payment — no real money is charged.
