@@ -16,10 +16,13 @@ function ServiceTimeline({
 }) {
   const normStatus = String(status || "").toUpperCase();
 
-  const isBooked = ["PENDING", "BOOKED", "ACCEPTED", "ARRIVED", "IN_PROGRESS", "COMPLETED"].includes(normStatus);
-  const isArrived = ["ACCEPTED", "ARRIVED", "IN_PROGRESS", "COMPLETED"].includes(normStatus);
-  const isInProgress = ["IN_PROGRESS", "COMPLETED"].includes(normStatus);
+  const isBooked = ["PENDING", "BOOKED", "ASSIGNED", "ACCEPTED", "ARRIVED", "IN_PROGRESS", "PAYMENT_PENDING", "WORK_COMPLETED", "COMPLETED"].includes(normStatus);
+  const isArrived = ["ACCEPTED", "ARRIVED", "IN_PROGRESS", "PAYMENT_PENDING", "WORK_COMPLETED", "COMPLETED"].includes(normStatus);
+  const isInProgress = ["IN_PROGRESS", "PAYMENT_PENDING", "WORK_COMPLETED", "COMPLETED"].includes(normStatus);
+  const isWorkDone = ["PAYMENT_PENDING", "WORK_COMPLETED", "COMPLETED"].includes(normStatus);
   const isCompleted = normStatus === "COMPLETED";
+
+  const isPaymentDue = normStatus === "PAYMENT_PENDING" || normStatus === "WORK_COMPLETED";
 
   const steps = [
     {
@@ -28,8 +31,8 @@ function ServiceTimeline({
       title: "Booking Confirmed",
       subtitle: "Service request placed and broadcast to nearby cooperative workers",
       icon: "📋",
-      isCompleted: isBooked && normStatus !== "PENDING" && normStatus !== "BOOKED",
-      isActive: normStatus === "PENDING" || normStatus === "BOOKED",
+      isCompleted: isArrived && !["PENDING", "BOOKED", "ASSIGNED"].includes(normStatus),
+      isActive: ["PENDING", "BOOKED", "ASSIGNED"].includes(normStatus),
       meta: bookingDate ? `Order Date: ${bookingDate}` : null,
     },
     {
@@ -38,7 +41,7 @@ function ServiceTimeline({
       title: "Technician Arrived",
       subtitle: "Technician arrived at doorstep · Awaiting Start PIN",
       icon: "👨‍🔧",
-      isCompleted: isArrived && normStatus !== "ACCEPTED" && normStatus !== "ARRIVED",
+      isCompleted: isInProgress && normStatus !== "ACCEPTED" && normStatus !== "ARRIVED",
       isActive: normStatus === "ACCEPTED" || normStatus === "ARRIVED",
       meta: isArrived && !isInProgress ? "Doorstep Handshake Pending" : null,
     },
@@ -46,35 +49,51 @@ function ServiceTimeline({
       id: 3,
       name: "IN_PROGRESS",
       title: "Job In Progress",
-      subtitle: "✓ Start PIN Verified · Service & quality inspection underway",
+      subtitle: isWorkDone
+        ? "✓ Start PIN Verified · Service completed"
+        : "✓ Start PIN Verified · Service & quality inspection underway",
       icon: "🛠️",
-      isCompleted: isCompleted,
+      isCompleted: isWorkDone,
       isActive: normStatus === "IN_PROGRESS",
-      meta: startOtpVerifiedAt ? `Verified: ${new Date(startOtpVerifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : null,
+      meta: startOtpVerifiedAt
+        ? `Verified: ${new Date(startOtpVerifiedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+        : null,
     },
     {
       id: 4,
-      name: "COMPLETED",
-      title: "Settlement Committed",
-      subtitle: "✓ Completion PIN Verified · ₹199 labour payout settled to worker wallet",
-      icon: "🤝",
+      name: isPaymentDue ? "PAYMENT DUE" : "SETTLEMENT",
+      title: isPaymentDue
+        ? "Work Done · Payment Due"
+        : isCompleted
+        ? "Settlement Committed"
+        : "Payment & Settlement",
+      subtitle: isPaymentDue
+        ? "✓ Completion PIN Verified · Settle final bill to disburse 100% labour"
+        : isCompleted
+        ? "✓ Payment settled · 100% labour disbursed to worker wallet"
+        : "Disburses 100% labour floor to worker wallet upon job sign-off",
+      icon: isPaymentDue ? "💳" : "🤝",
       isCompleted: isCompleted,
-      isActive: false,
-      meta: endOtpVerifiedAt ? `Verified: ${new Date(endOtpVerifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : null,
+      isActive: isPaymentDue,
+      meta: endOtpVerifiedAt
+        ? `Verified: ${new Date(endOtpVerifiedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+        : null,
     },
     {
       id: 5,
-      name: "WARRANTY ACTIVE",
+      name: isCompleted ? "WARRANTY ACTIVE" : "WARRANTY",
       title: "3-Day Guarantee",
-      subtitle: "72-hr Workmanship Guarantee active · Free re-service protection",
+      subtitle: isCompleted
+        ? "72-hr Workmanship Guarantee active · Free re-service protection"
+        : "Activates automatically upon completion & payment settlement",
       icon: "🛡️",
       isCompleted: isCompleted,
       isActive: isCompleted,
       meta: isCompleted
         ? warrantyExpiresAt
-          ? `Active until ${new Date(warrantyExpiresAt).toLocaleDateString([], { day: 'numeric', month: 'short' })}`
+          ? `Active until ${new Date(warrantyExpiresAt).toLocaleDateString([], { day: "numeric", month: "short" })}`
           : "Active 72-Hour Window"
-        : "Activates on End PIN",
+        : "Pending Payment Settlement",
     },
   ];
 
@@ -95,8 +114,9 @@ function ServiceTimeline({
   // Calculate progress percentage for 5 steps
   let progressPct = 15;
   if (normStatus === "ACCEPTED" || normStatus === "ARRIVED") progressPct = 35;
-  if (normStatus === "IN_PROGRESS") progressPct = 65;
-  if (normStatus === "COMPLETED") progressPct = 100;
+  if (normStatus === "IN_PROGRESS") progressPct = 60;
+  if (isPaymentDue) progressPct = 80;
+  if (isCompleted) progressPct = 100;
 
   return (
     <div className="service-timeline-card">

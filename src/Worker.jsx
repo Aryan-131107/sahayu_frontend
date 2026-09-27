@@ -225,6 +225,9 @@ function Worker() {
       if (updated) {
         setActiveJob(updated);
         setJobMessage(`✓ Job #${activeJob.booking_reference || activeJob.booking_id} accepted! Status updated to WORKER ARRIVED.`);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("storage"));
+        }
       }
     } catch (err) {
       console.error("[Worker Accept Failure]", err);
@@ -274,6 +277,9 @@ function Worker() {
       });
 
       setEnteredStartOtp("");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("storage"));
+      }
     } catch (err) {
       const msg = err.message || "Invalid Handshake PIN.";
       setJobError(
@@ -340,6 +346,9 @@ function Worker() {
       });
 
       setEnteredEndOtp("");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("storage"));
+      }
     } catch (err) {
       const msg = err.message || "Invalid Completion PIN.";
       setJobError(
@@ -718,11 +727,12 @@ function Worker() {
 
           {activeJob ? (() => {
             const rawStatus = (activeJob.status || "").toUpperCase();
-            const isPaid = activeJob.payment_status === "PAID" || rawStatus === "COMPLETED";
-            const isPendingPayment = isPaymentPending || rawStatus === "PAYMENT_PENDING" || rawStatus === "WORK_COMPLETED";
+            const storedPayment = activeJob.booking_id ? getBookingPayment(activeJob.booking_id) : null;
+            const isPaid = activeJob.payment_status === "PAID" || storedPayment?.status === "PAID";
+            const isPendingPayment = isPaymentPending || rawStatus === "PAYMENT_PENDING" || rawStatus === "WORK_COMPLETED" || (rawStatus === "COMPLETED" && !isPaid);
 
             let normStatus = rawStatus;
-            if (isPaid || rawStatus === "COMPLETED") {
+            if (isPaid) {
               normStatus = "COMPLETED";
             } else if (isPendingPayment) {
               normStatus = "PAYMENT_PENDING";

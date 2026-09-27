@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import {
   getBooking,
@@ -49,14 +49,22 @@ function MyBookings() {
   );
 
   // Quotation & Payment State Trigger
-  const [, setQuoteVersion] = useState(0);
+  const [quoteVersion, setQuoteVersion] = useState(0);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("UPI");
   const [payingDemo, setPayingDemo] = useState(false);
   const [paymentSuccessToast, setPaymentSuccessToast] = useState("");
 
-  const quotation = booking?.booking_id ? getBookingQuotation(booking.booking_id) : null;
-  const paymentData = booking?.booking_id ? getBookingPayment(booking.booking_id) : null;
-  const storedWarranty = booking?.booking_id ? getBookingWarranty(booking.booking_id) : null;
+  const quotation = useMemo(() => {
+    return booking?.booking_id ? getBookingQuotation(booking.booking_id) : null;
+  }, [booking?.booking_id, quoteVersion]);
+
+  const paymentData = useMemo(() => {
+    return booking?.booking_id ? getBookingPayment(booking.booking_id) : null;
+  }, [booking?.booking_id, quoteVersion]);
+
+  const storedWarranty = useMemo(() => {
+    return booking?.booking_id ? getBookingWarranty(booking.booking_id) : null;
+  }, [booking?.booking_id, quoteVersion]);
 
   // Review Form State
   const [rating, setRating] = useState(5);
@@ -108,17 +116,37 @@ function MyBookings() {
     };
   }, [initialId, location.state?.bookingData]);
 
-  // Live Auto-Refresh polling for real-time journey updates
+  // Real-time synchronization of quotation, payment and backend booking state
   useEffect(() => {
-    if (!autoRefresh || !booking?.booking_id) return;
-    if (booking.status === "COMPLETED" || booking.status === "CANCELLED") return;
+    if (!booking?.booking_id) return;
 
+    const handleStorage = (e) => {
+      if (
+        !e.key ||
+        e.key === `sahayu_quotation_${booking.booking_id}` ||
+        e.key === `sahayu_payment_${booking.booking_id}` ||
+        e.key === `sahayu_warranty_${booking.booking_id}`
+      ) {
+        setQuoteVersion((v) => v + 1);
+        fetchBooking(booking.booking_id, true);
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+
+    // Continuous 1.5s auto-refresh polling for split-screen real-time synchronization
     const interval = setInterval(() => {
-      fetchBooking(booking.booking_id, true);
-    }, 4000);
+      setQuoteVersion((v) => v + 1);
+      if (autoRefresh && booking.status !== "CANCELLED") {
+        fetchBooking(booking.booking_id, true);
+      }
+    }, 1500);
 
-    return () => clearInterval(interval);
-  }, [autoRefresh, booking?.booking_id, booking?.status, fetchBooking]);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      clearInterval(interval);
+    };
+  }, [booking?.booking_id, booking?.status, autoRefresh, fetchBooking]);
 
   const handleCancelBooking = async () => {
     if (!booking) return;
@@ -462,151 +490,267 @@ function MyBookings() {
               </div>
             )}
 
-            {/* 2. 🔐 OTP VERIFICATION CONCEPT (START & END OTP) */}
-            {booking.status !== "CANCELLED" && (
-              <div className="otp-security-container">
-                <div className="otp-card start-otp-card">
-                  <div className="otp-header">
-                    <span className="otp-badge start">STEP 1 · ARRIVAL</span>
-                    <h4>START PIN</h4>
-                  </div>
-                  <div className="otp-display-box">{booking.start_otp || startOtp}</div>
-                  <p className="otp-instruction">
-                    Share this PIN with your worker when they arrive at your location.
+            {/* Approved Quotation Notification Banner for Customer */}
+            {quotation && quotation.status === "APPROVED" && (
+              <div
+                className="admin-toast-success"
+                style={{
+                  marginBottom: "20px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "14px 18px",
+                  borderLeft: "5px solid #059669",
+                }}
+              >
+                <span style={{ fontSize: "20px" }}>✓</span>
+                <div>
+                  <strong style={{ display: "block", fontSize: "14px", color: "#065f46" }}>
+                    Customer approved additional work (+₹{quotation.additional_amount})
+                  </strong>
+                  <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#047857" }}>
+                    Additional work is approved. Your technician has been notified and Completion PIN is now unlocked.
                   </p>
-                  <small className="otp-sub-note">
-                    {booking.status === "in_progress" || booking.status === "IN_PROGRESS" || booking.status === "completed" || booking.status === "COMPLETED"
-                      ? "✓ Start PIN verified via Backend Consensus"
-                      : "Worker enters this to start the job."}
-                  </small>
-                </div>
-
-                <div className="otp-card end-otp-card">
-                  <div className="otp-header">
-                    <span className="otp-badge end">STEP 2 · COMPLETION</span>
-                    <h4>COMPLETION PIN</h4>
-                  </div>
-                  <div className="otp-display-box">{booking.end_otp || endOtp}</div>
-                  <p className="otp-instruction">
-                    Share this PIN only after the work is completed and thoroughly checked.
-                  </p>
-                  <small className="otp-sub-note">
-                    {booking.status === "completed" || booking.status === "COMPLETED"
-                      ? "✓ Completion PIN verified & work signed off"
-                      : "Ensures satisfaction before payment disbursement."}
-                  </small>
                 </div>
               </div>
             )}
 
+            {/* 2. 🔐 OTP VERIFICATION CONCEPT (START & END PIN) */}
+            {booking.status !== "CANCELLED" && (() => {
+              const rawStatus = (booking.status || "").toUpperCase();
+              const isStartVerified =
+                ["IN_PROGRESS", "PAYMENT_PENDING", "WORK_COMPLETED", "COMPLETED"].includes(rawStatus) ||
+                !!booking.start_otp_verified_at;
+              const isEndVerified =
+                ["PAYMENT_PENDING", "WORK_COMPLETED", "COMPLETED"].includes(rawStatus) ||
+                !!booking.end_otp_verified_at;
+              const isPendingAddon = quotation && quotation.status === "PENDING_APPROVAL";
+              const isAddonApproved = quotation && quotation.status === "APPROVED";
+
+              return (
+                <div className="otp-security-container">
+                  {/* START PIN CARD */}
+                  <div className={`otp-card start-otp-card ${isStartVerified ? "verified" : ""}`}>
+                    <div className="otp-header">
+                      <span className="otp-badge start">STEP 1 · ARRIVAL</span>
+                      <h4>START PIN</h4>
+                    </div>
+                    {isStartVerified ? (
+                      <div
+                        className="otp-display-box verified-box"
+                        style={{ background: "#ecfdf5", color: "#047857", fontSize: "16px", fontWeight: 800 }}
+                      >
+                        ✓ VERIFIED
+                      </div>
+                    ) : (
+                      <div className="otp-display-box">{booking.start_otp || startOtp}</div>
+                    )}
+                    <p className="otp-instruction">
+                      {isStartVerified
+                        ? "Technician arrival confirmed and verified via Backend Consensus."
+                        : "Share this PIN with your worker when they arrive at your location."}
+                    </p>
+                    <small className="otp-sub-note">
+                      {isStartVerified
+                        ? "✓ Doorstep handshake complete · Work in progress"
+                        : "Worker enters this to start the job."}
+                    </small>
+                  </div>
+
+                  {/* COMPLETION PIN CARD */}
+                  <div
+                    className={`otp-card end-otp-card ${
+                      isEndVerified ? "verified" : isPendingAddon ? "locked" : ""
+                    }`}
+                  >
+                    <div className="otp-header">
+                      <span className="otp-badge end">STEP 2 · COMPLETION</span>
+                      <h4>COMPLETION PIN</h4>
+                    </div>
+                    {isEndVerified ? (
+                      <div
+                        className="otp-display-box verified-box"
+                        style={{ background: "#ecfdf5", color: "#047857", fontSize: "16px", fontWeight: 800 }}
+                      >
+                        ✓ VERIFIED
+                      </div>
+                    ) : isPendingAddon ? (
+                      <div
+                        className="otp-display-box locked-box"
+                        style={{
+                          background: "#fffbeb",
+                          color: "#92400e",
+                          fontSize: "13px",
+                          fontWeight: 800,
+                          padding: "10px 12px",
+                          border: "1.5px dashed #f59e0b",
+                        }}
+                      >
+                        🔒 LOCKED
+                      </div>
+                    ) : (
+                      <div className="otp-display-box">{booking.end_otp || endOtp}</div>
+                    )}
+                    <p className="otp-instruction">
+                      {isEndVerified
+                        ? "Work validated and signed off via Completion PIN."
+                        : isPendingAddon
+                        ? "Awaiting your approval of additional work quotation. Please approve or decline above to unlock."
+                        : "Share this PIN only after the work is completed and thoroughly checked."}
+                    </p>
+                    <small className="otp-sub-note">
+                      {isEndVerified
+                        ? "✓ Verified via Backend Consensus · Proceed to payment"
+                        : isPendingAddon
+                        ? "🔒 Completion PIN unlocks immediately after approval"
+                        : isAddonApproved
+                        ? "✓ Additional work approved · PIN active"
+                        : "Ensures satisfaction before payment disbursement."}
+                    </small>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* 💳 INTERACTIVE POST-COMPLETION PAYMENT STEP */}
-            {booking.status === "COMPLETED" && (booking.payment_status !== "PAID" && paymentData?.status !== "PAID") && (
-              <div className="payment-pending-card" style={{ marginBottom: "25px" }}>
-                <div className="payment-card-header">
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <span style={{ fontSize: "28px" }}>💳</span>
-                    <div>
-                      <h3 style={{ margin: 0, color: "#0f172a" }}>Payment Pending (Job Completed)</h3>
-                      <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: "13px" }}>
-                        Work has been validated via Completion PIN. Please settle the total fee to disburse 100% labour floor to worker and activate your warranty.
+            {(() => {
+              const rawStatus = (booking.status || "").toUpperCase();
+              const isPaid = booking.payment_status === "PAID" || paymentData?.status === "PAID";
+              const isWorkDone =
+                ["PAYMENT_PENDING", "WORK_COMPLETED", "COMPLETED"].includes(rawStatus) ||
+                !!booking.end_otp_verified_at;
+
+              if (isWorkDone && !isPaid) {
+                return (
+                  <div className="payment-pending-card" style={{ marginBottom: "25px" }}>
+                    <div className="payment-card-header">
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <span style={{ fontSize: "28px" }}>💳</span>
+                        <div>
+                          <h3 style={{ margin: 0, color: "#0f172a" }}>Payment Pending (Job Completed)</h3>
+                          <p style={{ margin: "2px 0 0", color: "#64748b", fontSize: "13px" }}>
+                            Work has been validated via Completion PIN. Please settle the total fee to disburse 100% labour floor to worker and activate your warranty.
+                          </p>
+                        </div>
+                      </div>
+                      <span className="status-badge yellow">PAYMENT DUE</span>
+                    </div>
+
+                    <div className="invoice-preview-box" style={{ margin: "16px 0" }}>
+                      <div className="invoice-line-items">
+                        <div className="invoice-row">
+                          <span>Worker Base Inspection & Labour Floor (100%):</span>
+                          <strong>₹199</strong>
+                        </div>
+                        <div className="invoice-row">
+                          <span>Platform Tech Fee:</span>
+                          <strong>₹30</strong>
+                        </div>
+                        <div className="invoice-row">
+                          <span>Cooperative Welfare (Gullak Pool):</span>
+                          <strong>₹10</strong>
+                        </div>
+                        {quotation && quotation.status === "APPROVED" && (
+                          <div className="invoice-row" style={{ color: "#059669" }}>
+                            <span>Approved Additional Work ({quotation.items?.map((i) => i.name).join(", ")}):</span>
+                            <strong>+₹{quotation.additional_amount}</strong>
+                          </div>
+                        )}
+                        <div className="invoice-row total-row">
+                          <span>Total Payable:</span>
+                          <strong className="total-highlight">₹{calculateFinalPayableAmount()}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Selectable Payment Method Pills */}
+                    <div style={{ marginBottom: "16px" }}>
+                      <small style={{ fontWeight: 700, color: "#64748b", display: "block", marginBottom: "8px" }}>
+                        Select Payment Method:
+                      </small>
+                      <div style={{ display: "flex", gap: "8px", maxWidth: "420px" }}>
+                        {["UPI", "Card", "Net Banking"].map((method) => (
+                          <button
+                            key={method}
+                            type="button"
+                            onClick={() => setSelectedPaymentMethod(method)}
+                            style={{
+                              flex: 1,
+                              padding: "8px 12px",
+                              fontSize: "12px",
+                              fontWeight: 700,
+                              borderRadius: "8px",
+                              border: selectedPaymentMethod === method ? "2px solid #059669" : "1px solid #cbd5e1",
+                              background: selectedPaymentMethod === method ? "#ecfdf5" : "#ffffff",
+                              color: selectedPaymentMethod === method ? "#059669" : "#475569",
+                              cursor: "pointer",
+                            }}
+                          >
+                            {method === "UPI" ? "📱 UPI" : method === "Card" ? "💳 Card" : "🏦 Net Banking"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Dynamic Demo QR for UPI */}
+                    {selectedPaymentMethod === "UPI" && (
+                      <div
+                        style={{
+                          background: "#f0fdf4",
+                          border: "1px solid #bbf7d0",
+                          borderRadius: "10px",
+                          padding: "16px",
+                          textAlign: "center",
+                          marginBottom: "16px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "inline-block",
+                            background: "#dcfce7",
+                            color: "#166534",
+                            fontSize: "11px",
+                            fontWeight: 800,
+                            padding: "2px 8px",
+                            borderRadius: "6px",
+                            marginBottom: "8px",
+                          }}
+                        >
+                          DEMO PAYMENT QR · SIMULATION ONLY
+                        </div>
+                        <h4 style={{ margin: "0 0 4px", fontSize: "14px", color: "#0f172a" }}>
+                          Scan UPI QR to Settle ₹{calculateFinalPayableAmount()}
+                        </h4>
+                        <p style={{ fontSize: "11px", color: "#64748b", margin: "0 0 12px" }}>
+                          Simulation only — no real payment will be processed.
+                        </p>
+                        <DemoUpiQr
+                          amount={calculateFinalPayableAmount()}
+                          orderId={booking.booking_reference || `SH-00${booking.booking_id}`}
+                          size={140}
+                        />
+                      </div>
+                    )}
+
+                    <div style={{ textAlign: "right" }}>
+                      <button
+                        type="button"
+                        className="primary-btn"
+                        style={{ background: "#059669", borderColor: "#059669", fontSize: "15px", padding: "12px 24px" }}
+                        onClick={handleSimulatePayment}
+                        disabled={payingDemo}
+                      >
+                        {payingDemo ? "Processing Settlement..." : `✓ Confirm Demo Pay (₹${calculateFinalPayableAmount()})`}
+                      </button>
+                      <p style={{ fontSize: "12px", color: "#64748b", marginTop: "6px" }}>
+                        Demo payment — no real money is charged.
                       </p>
                     </div>
                   </div>
-                  <span className="status-badge yellow">PAYMENT DUE</span>
-                </div>
-
-                <div className="invoice-preview-box" style={{ margin: "16px 0" }}>
-                  <div className="invoice-line-items">
-                    <div className="invoice-row">
-                      <span>Worker Base Inspection & Labour Floor (100%):</span>
-                      <strong>₹199</strong>
-                    </div>
-                    <div className="invoice-row">
-                      <span>Platform Tech Fee:</span>
-                      <strong>₹30</strong>
-                    </div>
-                    <div className="invoice-row">
-                      <span>Cooperative Welfare (Gullak Pool):</span>
-                      <strong>₹10</strong>
-                    </div>
-                    {quotation && quotation.status === "APPROVED" && (
-                      <div className="invoice-row" style={{ color: "#059669" }}>
-                        <span>Approved Additional Work ({quotation.items?.map(i => i.name).join(", ")}):</span>
-                        <strong>+₹{quotation.additional_amount}</strong>
-                      </div>
-                    )}
-                    <div className="invoice-row total-row">
-                      <span>Total Payable:</span>
-                      <strong className="total-highlight">₹{calculateFinalPayableAmount()}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Selectable Payment Method Pills */}
-                <div style={{ marginBottom: "16px" }}>
-                  <small style={{ fontWeight: 700, color: "#64748b", display: "block", marginBottom: "8px" }}>
-                    Select Payment Method:
-                  </small>
-                  <div style={{ display: "flex", gap: "8px", maxWidth: "420px" }}>
-                    {["UPI", "Card", "Net Banking"].map((method) => (
-                      <button
-                        key={method}
-                        type="button"
-                        onClick={() => setSelectedPaymentMethod(method)}
-                        style={{
-                          flex: 1,
-                          padding: "8px 12px",
-                          fontSize: "12px",
-                          fontWeight: 700,
-                          borderRadius: "8px",
-                          border: selectedPaymentMethod === method ? "2px solid #059669" : "1px solid #cbd5e1",
-                          background: selectedPaymentMethod === method ? "#ecfdf5" : "#ffffff",
-                          color: selectedPaymentMethod === method ? "#059669" : "#475569",
-                          cursor: "pointer",
-                        }}
-                      >
-                        {method === "UPI" ? "📱 UPI" : method === "Card" ? "💳 Card" : "🏦 Net Banking"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Dynamic Demo QR for UPI */}
-                {selectedPaymentMethod === "UPI" && (
-                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "10px", padding: "16px", textAlign: "center", marginBottom: "16px" }}>
-                    <div style={{ display: "inline-block", background: "#dcfce7", color: "#166534", fontSize: "11px", fontWeight: 800, padding: "2px 8px", borderRadius: "6px", marginBottom: "8px" }}>
-                      DEMO PAYMENT QR · SIMULATION ONLY
-                    </div>
-                    <h4 style={{ margin: "0 0 4px", fontSize: "14px", color: "#0f172a" }}>
-                      Scan UPI QR to Settle ₹{calculateFinalPayableAmount()}
-                    </h4>
-                    <p style={{ fontSize: "11px", color: "#64748b", margin: "0 0 12px" }}>
-                      Simulation only — no real payment will be processed.
-                    </p>
-                    <DemoUpiQr
-                      amount={calculateFinalPayableAmount()}
-                      orderId={booking.booking_reference || `SH-00${booking.booking_id}`}
-                      size={140}
-                    />
-                  </div>
-                )}
-
-                <div style={{ textAlign: "right" }}>
-                  <button
-                    type="button"
-                    className="primary-btn"
-                    style={{ background: "#059669", borderColor: "#059669", fontSize: "15px", padding: "12px 24px" }}
-                    onClick={handleSimulatePayment}
-                    disabled={payingDemo}
-                  >
-                    {payingDemo ? "Processing Settlement..." : `✓ Confirm Demo Pay (₹${calculateFinalPayableAmount()})`}
-                  </button>
-                  <p style={{ fontSize: "12px", color: "#64748b", marginTop: "6px" }}>
-                    Demo payment — no real money is charged.
-                  </p>
-                </div>
-              </div>
-            )}
+                );
+              }
+              return null;
+            })()}
 
             {/* 3. 🛡️ 72-HOUR WORKMANSHIP GUARANTEE */}
             {booking.status !== "CANCELLED" && (

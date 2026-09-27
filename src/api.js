@@ -699,6 +699,9 @@ export const getBookingQuotation = (bookingId) => {
 export const saveBookingQuotation = (bookingId, quoteData) => {
   try {
     localStorage.setItem(`sahayu_quotation_${bookingId}`, JSON.stringify(quoteData));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage"));
+    }
   } catch {
     // Ignore localStorage errors
   }
@@ -717,6 +720,9 @@ export const getBookingPayment = (bookingId) => {
 export const saveBookingPayment = (bookingId, paymentData) => {
   try {
     localStorage.setItem(`sahayu_payment_${bookingId}`, JSON.stringify(paymentData));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage"));
+    }
   } catch {
     // Ignore localStorage errors
   }
@@ -735,6 +741,9 @@ export const getBookingWarranty = (bookingId) => {
 export const saveBookingWarranty = (bookingId, warrantyData) => {
   try {
     localStorage.setItem(`sahayu_warranty_${bookingId}`, JSON.stringify(warrantyData));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage"));
+    }
   } catch {
     // Ignore localStorage errors
   }
@@ -745,6 +754,9 @@ export const clearDemoBookingState = (bookingId) => {
     localStorage.removeItem(`sahayu_quotation_${bookingId}`);
     localStorage.removeItem(`sahayu_payment_${bookingId}`);
     localStorage.removeItem(`sahayu_warranty_${bookingId}`);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage"));
+    }
   } catch {
     // Ignore localStorage errors
   }
