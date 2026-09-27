@@ -71,6 +71,14 @@ export function setAuthSession({ role, user, token, ttlMs = SESSION_TTL_MS }) {
       sessionStorage.setItem("sahayu_customer_auth", "true");
       sessionStorage.setItem("sahayu_customer_email", session.user.email);
       sessionStorage.setItem("sahayu_customer_name", session.user.name);
+    } else if (role === "admin") {
+      sessionStorage.setItem("sahayu_admin_auth", "true");
+    }
+
+    // Broadcast auth state change across current window and other tabs
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(new CustomEvent("sahayu_auth_state_change", { detail: session }));
     }
   } catch (err) {
     console.error("[Sahāyu Auth] Failed to persist session:", err);
@@ -81,19 +89,47 @@ export function setAuthSession({ role, user, token, ttlMs = SESSION_TTL_MS }) {
 
 /**
  * Clear session and log out.
+ * Removes both primary and role-specific session storage keys without touching unrelated app data.
  */
-export function clearAuthSession() {
+export function clearAuthSession(role = null) {
   try {
     localStorage.removeItem(SESSION_KEY);
+    
+    // Clear role-specific storage
     sessionStorage.removeItem("sahayu_worker_auth");
     sessionStorage.removeItem("sahayu_worker_phone");
     sessionStorage.removeItem("sahayu_worker_eshram");
     sessionStorage.removeItem("sahayu_customer_auth");
     sessionStorage.removeItem("sahayu_customer_email");
     sessionStorage.removeItem("sahayu_customer_name");
-  } catch {
-    // Ignore storage errors
+    sessionStorage.removeItem("sahayu_admin_auth");
+    localStorage.removeItem("sahayu_admin_auth");
+
+    // Broadcast session clearance
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("storage"));
+      window.dispatchEvent(new CustomEvent("sahayu_auth_state_change", { detail: null }));
+    }
+  } catch (err) {
+    console.error("[Sahāyu Auth] Error clearing session:", err);
   }
+}
+
+/**
+ * Perform asynchronous logout with error handling and state broadcast.
+ */
+export async function logout(role = null) {
+  return new Promise((resolve, reject) => {
+    try {
+      // Simulate clean token invalidation & local state destruction
+      setTimeout(() => {
+        clearAuthSession(role);
+        resolve({ success: true, timestamp: Date.now() });
+      }, 150);
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
 
 /**
@@ -102,7 +138,6 @@ export function clearAuthSession() {
 export function isWorkerAuthenticated() {
   const session = getAuthSession();
   if (session && session.role === "worker") return true;
-  // Fallback check for active sessionStorage in current tab
   return sessionStorage.getItem("sahayu_worker_auth") === "true";
 }
 
@@ -112,8 +147,19 @@ export function isWorkerAuthenticated() {
 export function isCustomerAuthenticated() {
   const session = getAuthSession();
   if (session && session.role === "customer") return true;
-  // Fallback check for active sessionStorage in current tab
   return sessionStorage.getItem("sahayu_customer_auth") === "true";
+}
+
+/**
+ * Check if active session is Admin
+ */
+export function isAdminAuthenticated() {
+  const session = getAuthSession();
+  if (session && session.role === "admin") return true;
+  return (
+    sessionStorage.getItem("sahayu_admin_auth") === "true" ||
+    localStorage.getItem("sahayu_admin_auth") === "true"
+  );
 }
 
 /**

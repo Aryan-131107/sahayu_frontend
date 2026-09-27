@@ -43,10 +43,16 @@ export default function Login() {
 
   // Auto-redirect if already authenticated with matching role
   useEffect(() => {
-    const existing = getAuthSession();
-    if (existing && existing.role === activeRole) {
-      navigate(redirectPath || (existing.role === "worker" ? "/worker" : "/customer"), { replace: true });
-    }
+    const checkRedirect = () => {
+      const existing = getAuthSession();
+      if (existing && existing.role === activeRole) {
+        navigate(redirectPath || (existing.role === "worker" ? "/worker" : "/customer"), { replace: true });
+      }
+    };
+    checkRedirect();
+
+    window.addEventListener("storage", checkRedirect);
+    return () => window.removeEventListener("storage", checkRedirect);
   }, [activeRole, navigate, redirectPath]);
 
   useEffect(() => {

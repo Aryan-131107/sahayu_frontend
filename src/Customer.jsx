@@ -1,19 +1,49 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { getServices } from "./api";
-import { isCustomerAuthenticated } from "./auth";
+import { isCustomerAuthenticated, logout, clearAuthSession } from "./auth";
 import "./App.css";
 
 function Customer() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  // Authentication Guard: Ensure customer has verified session
+  // Authentication Guard: Ensure customer has verified session & react to multi-tab logout
   useEffect(() => {
-    if (!isCustomerAuthenticated()) {
-      navigate("/login?role=customer&redirect=/customer", { replace: true });
-    }
+    const checkAuth = () => {
+      if (!isCustomerAuthenticated()) {
+        navigate("/login?role=customer&redirect=/customer", { replace: true });
+      }
+    };
+
+    checkAuth();
+
+    const handleStorage = (e) => {
+      if (!e.key || e.key === "sahayu_auth_session" || e.key === "sahayu_customer_auth") {
+        checkAuth();
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, [navigate]);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await logout("customer");
+      navigate("/login?role=customer", { replace: true });
+    } catch (err) {
+      console.error("[Customer Logout Error]", err);
+      alert("Logout encountered an issue. Clearing local session...");
+      clearAuthSession("customer");
+      navigate("/login?role=customer", { replace: true });
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   const [services, setServices] = useState([]);
   const [loadingServices, setLoadingServices] = useState(true);
@@ -207,14 +237,11 @@ function Customer() {
           <button
             className="secondary-btn"
             style={{ color: "#ef4444", borderColor: "#fca5a5" }}
-            onClick={() => {
-              sessionStorage.removeItem("sahayu_customer_auth");
-              sessionStorage.removeItem("sahayu_customer_email");
-              sessionStorage.removeItem("sahayu_customer_name");
-              navigate("/login?role=customer");
-            }}
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            title="Log out from customer portal"
           >
-            🚪 Logout
+            {isLoggingOut ? "🚪 Logging out..." : "🚪 Logout"}
           </button>
         </div>
       </nav>

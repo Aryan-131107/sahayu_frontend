@@ -13,7 +13,7 @@ import {
   getAllStoredVerifications,
   getGullakSummary,
 } from "./api";
-import { getAuthSession, setAuthSession, clearAuthSession } from "./auth";
+import { getAuthSession, setAuthSession, clearAuthSession, logout, isAdminAuthenticated as checkAdminAuth } from "./auth";
 import "./App.css";
 
 // 1. Error Boundary to prevent any blank-screen failure
@@ -89,12 +89,22 @@ function AdminDashboardContent() {
 
   // Admin authorization state
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
-    const session = getAuthSession();
-    if (session && session.role === "admin") return true;
-    return sessionStorage.getItem("sahayu_admin_auth") === "true";
+    return checkAdminAuth();
   });
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [adminPin, setAdminPin] = useState("");
   const [authError, setAuthError] = useState("");
+
+  // Multi-tab synchronization for admin session
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (!e.key || e.key === "sahayu_auth_session" || e.key === "sahayu_admin_auth") {
+        setIsAdminAuthenticated(checkAdminAuth());
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   // Data states with safe array initializers
   const [workers, setWorkers] = useState([]);
@@ -338,12 +348,21 @@ function AdminDashboardContent() {
     }
   };
 
-  const handleAdminLogout = () => {
-    sessionStorage.removeItem("sahayu_admin_auth");
-    localStorage.removeItem("sahayu_admin_auth");
-    clearAuthSession();
-    setIsAdminAuthenticated(false);
-    navigate("/admin", { replace: true });
+  const handleAdminLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await logout("admin");
+      setIsAdminAuthenticated(false);
+      navigate("/admin", { replace: true });
+    } catch (err) {
+      console.error("[Admin Logout Error]", err);
+      clearAuthSession("admin");
+      setIsAdminAuthenticated(false);
+      navigate("/admin", { replace: true });
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   const switchTab = (tab) => {
@@ -729,8 +748,13 @@ function AdminDashboardContent() {
               <small>Jabalpur Central</small>
             </div>
           </div>
-          <button className="logout-btn" onClick={handleAdminLogout} title="Logout">
-            ⎋
+          <button
+            className="logout-btn"
+            onClick={handleAdminLogout}
+            disabled={isLoggingOut}
+            title={isLoggingOut ? "Logging out..." : "Log out from Admin Workspace"}
+          >
+            {isLoggingOut ? "⏳" : "⎋"}
           </button>
         </div>
       </aside>

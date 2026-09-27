@@ -10,11 +10,22 @@ function Booking() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  // Authentication Guard: Ensure customer has verified session
+  // Authentication Guard: Ensure customer has verified session and react to cross-tab logout
   useEffect(() => {
-    if (!isCustomerAuthenticated()) {
-      navigate("/login?role=customer&redirect=/booking", { replace: true });
-    }
+    const checkAuth = () => {
+      if (!isCustomerAuthenticated()) {
+        navigate("/login?role=customer&redirect=/booking", { replace: true });
+      }
+    };
+    checkAuth();
+
+    const handleStorage = (e) => {
+      if (!e.key || e.key === "sahayu_auth_session" || e.key === "sahayu_customer_auth") {
+        checkAuth();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, [navigate]);
 
   const reqState = location.state || {};

@@ -20,7 +20,7 @@ import {
   saveBookingWarranty,
   completeBooking,
 } from "./api";
-import { getAuthSession, clearAuthSession } from "./auth";
+import { getAuthSession, clearAuthSession, logout, isWorkerAuthenticated } from "./auth";
 import WarrantyCountdown from "./WarrantyCountdown";
 import VoiceAssistant from "./VoiceAssistant";
 import DemoUpiQr from "./DemoUpiQr";
@@ -28,18 +28,48 @@ import "./App.css";
 
 function Worker() {
   const navigate = useNavigate();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  // Authentication Guard: Ensure authenticated Worker session
+  // Authentication Guard: Ensure authenticated Worker session and react to cross-tab logout
   useEffect(() => {
-    const session = getAuthSession();
-    const legacyWorkerAuth = sessionStorage.getItem("sahayu_worker_auth") === "true";
-    if (!session && !legacyWorkerAuth) {
-      navigate("/login?role=worker&redirect=/worker", { replace: true });
-    } else if (session && session.role !== "worker") {
-      // Prevent cross-role access if logged in as customer
-      navigate("/login?role=worker&redirect=/worker", { replace: true });
-    }
+    const checkAuth = () => {
+      const session = getAuthSession();
+      const legacyWorkerAuth = sessionStorage.getItem("sahayu_worker_auth") === "true";
+      if (!session && !legacyWorkerAuth) {
+        navigate("/login?role=worker&redirect=/worker", { replace: true });
+      } else if (session && session.role !== "worker") {
+        // Prevent cross-role access if logged in as customer
+        navigate("/login?role=worker&redirect=/worker", { replace: true });
+      }
+    };
+
+    checkAuth();
+
+    const handleStorage = (e) => {
+      if (!e.key || e.key === "sahayu_auth_session" || e.key === "sahayu_worker_auth") {
+        checkAuth();
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, [navigate]);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await logout("worker");
+      navigate("/login?role=worker", { replace: true });
+    } catch (err) {
+      console.error("[Worker Logout Error]", err);
+      alert("Logout encountered an issue. Clearing local session...");
+      clearAuthSession("worker");
+      navigate("/login?role=worker", { replace: true });
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   const [workerId, setWorkerId] = useState(() => {
     const session = getAuthSession();
@@ -545,14 +575,11 @@ function Worker() {
           <button
             className="secondary-btn"
             style={{ color: "#ef4444", borderColor: "#fca5a5" }}
-            onClick={() => {
-              sessionStorage.removeItem("sahayu_worker_auth");
-              sessionStorage.removeItem("sahayu_worker_phone");
-              sessionStorage.removeItem("sahayu_worker_eshram");
-              navigate("/login?role=worker");
-            }}
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            title="Log out from worker desk"
           >
-            🚪 Logout
+            {isLoggingOut ? "🚪 Logging out..." : "🚪 Logout"}
           </button>
         </div>
       </nav>

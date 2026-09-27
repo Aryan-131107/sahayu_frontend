@@ -8,11 +8,22 @@ function WorkerProfile() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Authentication Guard: Ensure worker has verified session
+  // Authentication Guard: Ensure worker has verified session and react to cross-tab logout
   useEffect(() => {
-    if (!isWorkerAuthenticated()) {
-      navigate("/login?role=worker&redirect=/worker-profile", { replace: true });
-    }
+    const checkAuth = () => {
+      if (!isWorkerAuthenticated()) {
+        navigate("/login?role=worker&redirect=/worker-profile", { replace: true });
+      }
+    };
+    checkAuth();
+
+    const handleStorage = (e) => {
+      if (!e.key || e.key === "sahayu_auth_session" || e.key === "sahayu_worker_auth") {
+        checkAuth();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
   }, [navigate]);
 
   const workerId =
