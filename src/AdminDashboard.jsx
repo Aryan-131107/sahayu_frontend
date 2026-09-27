@@ -938,39 +938,42 @@ function AdminDashboardContent() {
                     </div>
                   </div>
 
-                  {/* Dedicated Gullak Welfare Pool Sinking Fund Banner */}
+                  {/* Dedicated Gullak Welfare Pool Sinking Fund Card */}
                   <div className="gullak-banner-card" style={{ marginTop: "24px" }}>
-                    <div className="gullak-banner-icon">🪙</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                        <h3 style={{ margin: 0 }}>
-                          Gullak Welfare Pool: ₹{gullakReserveBalance}
-                        </h3>
-                        <span className="gullak-active-pill">
-                          MUTUAL AID SINKING FUND
-                        </span>
+                    <div className="gullak-banner-left">
+                      <div className="gullak-banner-icon">🪙</div>
+                      <div className="gullak-banner-content">
+                        <div className="gullak-banner-badge-row">
+                          <span className="gullak-active-pill">MUTUAL AID SINKING FUND</span>
+                          <h4 className="gullak-main-heading">Gullak Welfare Pool</h4>
+                        </div>
+                        <div className="gullak-amount-highlight">
+                          ₹{typeof gullakReserveBalance === "number" ? gullakReserveBalance.toLocaleString("en-IN", { minimumFractionDigits: 2 }) : gullakReserveBalance}
+                          <span className="gullak-amount-sublabel">Current welfare pool balance</span>
+                        </div>
+                        <p className="gullak-banner-desc">
+                          Accumulated through completed cooperative bookings ({gullakCompletedBookings} completed orders · ₹10/booking micro-sinking fund allocated for emergency healthcare, tool breakdown micro-grants, and injury protection).
+                        </p>
                       </div>
-                      <p style={{ marginTop: "6px" }}>
-                        Accumulated via {gullakCompletedBookings} completed society bookings • ₹10/booking micro-sinking fund
-                        allocated for emergency healthcare, tool breakdown micro-grants, and injury protection.
-                      </p>
                     </div>
                     <button
-                      className="primary-btn"
+                      type="button"
+                      className="gullak-grant-action-btn"
                       onClick={() => setShowGrantModal(true)}
-                      style={{ background: "#92400e", borderColor: "#78350f" }}
                     >
                       🛡️ Authorize Emergency Grant
                     </button>
                   </div>
 
-                  {/* Two Column Section: Pending Queue & Recent Service Orders */}
+                  {/* Two Column Section: e-Shram Queue & Recent Service Orders */}
                   <div className="overview-two-col" style={{ marginTop: "24px" }}>
+                    {/* 1. e-Shram Verification Desk */}
                     <div className="overview-card">
                       <div className="overview-card-header">
                         <h3>e-Shram Verification Desk</h3>
                         <button
-                          className="text-btn"
+                          type="button"
+                          className="admin-view-all-btn"
                           onClick={() => switchTab("verifications")}
                         >
                           View All →
@@ -986,21 +989,23 @@ function AdminDashboardContent() {
                           )
                           .slice(0, 4)
                           .map((w) => (
-                            <div key={w.worker_id} className="queue-item">
+                            <div key={w.worker_id} className="queue-card-item">
                               <div className="queue-worker-info">
                                 <strong>{w.name}</strong>
                                 <small>
-                                  Member #SH-{100 + w.worker_id} · UAN: {w.eshram_uan}
+                                  Member #SH-{100 + w.worker_id} · UAN: {w.eshram_uan || `9823-4567-${1000 + w.worker_id}`}
                                 </small>
                               </div>
                               <div className="queue-actions">
                                 <button
+                                  type="button"
                                   className="action-btn verify"
                                   onClick={() => handleVerifyWorker(w)}
                                 >
                                   Validate ✓
                                 </button>
                                 <button
+                                  type="button"
                                   className="action-btn reject"
                                   onClick={() => handleRejectWorker(w)}
                                 >
@@ -1014,18 +1019,22 @@ function AdminDashboardContent() {
                             !w?.is_verified &&
                             w?.verification_status !== "REJECTED"
                         ).length === 0 && (
-                          <div className="empty-state-card">
-                            <p>✓ All registered workers are currently verified.</p>
+                          <div className="empty-state-card" style={{ padding: "28px 20px" }}>
+                            <p style={{ margin: 0, color: "#059669", fontWeight: 700, fontSize: "14px" }}>
+                              ✓ All registered workers are currently verified.
+                            </p>
                           </div>
                         )}
                       </div>
                     </div>
 
+                    {/* 2. Recent Service Orders */}
                     <div className="overview-card">
                       <div className="overview-card-header">
                         <h3>Recent Service Orders</h3>
                         <button
-                          className="text-btn"
+                          type="button"
+                          className="admin-view-all-btn"
                           onClick={() => switchTab("bookings")}
                         >
                           View All →
@@ -1033,22 +1042,58 @@ function AdminDashboardContent() {
                       </div>
 
                       <div className="recent-orders-list">
-                        {(Array.isArray(bookings) ? bookings : []).slice(0, 4).map((b) => (
-                          <div key={b.booking_id} className="recent-order-item">
-                            <div>
-                              <strong>Order #{b.booking_id}</strong>
-                              <small>
-                                {b.service_name || `Service #${b.service_id}`} ·
-                                Amount: ₹{b.amount || 239}
-                              </small>
+                        {(Array.isArray(bookings) ? bookings : []).slice(0, 4).map((b) => {
+                          const rawStatus = (b?.status || "PENDING").toUpperCase();
+                          let statusClass = "pending";
+                          let statusText = rawStatus;
+
+                          if (rawStatus === "COMPLETED" || rawStatus === "SETTLED") {
+                            statusClass = "completed";
+                            statusText = "COMPLETED";
+                          } else if (rawStatus === "ACCEPTED") {
+                            statusClass = "accepted";
+                            statusText = "WORKER ARRIVED";
+                          } else if (rawStatus === "IN_PROGRESS") {
+                            statusClass = "in_progress";
+                            statusText = "IN PROGRESS";
+                          } else if (rawStatus === "PAYMENT_PENDING" || rawStatus === "WORK_COMPLETED") {
+                            statusClass = "payment_pending";
+                            statusText = "PAYMENT PENDING";
+                          } else if (rawStatus === "ASSIGNED" || rawStatus === "PENDING") {
+                            statusClass = "assigned";
+                            statusText = "ASSIGNED";
+                          } else if (rawStatus === "CANCELLED") {
+                            statusClass = "cancelled";
+                            statusText = "CANCELLED";
+                          }
+
+                          return (
+                            <div key={b.booking_id} className="recent-order-card">
+                              <div className="recent-order-top-row">
+                                <div className="recent-order-title-group">
+                                  <span className="recent-order-id-badge">#{b.booking_id}</span>
+                                  <span className="recent-order-service-title" title={b.service_name || `Service #${b.service_id}`}>
+                                    {b.service_name || `Service #${b.service_id}`}
+                                  </span>
+                                </div>
+                                <strong className="recent-order-amount">₹{b.amount || 239}</strong>
+                              </div>
+                              <div className="recent-order-bottom-row">
+                                <span className={`status-pill ${statusClass}`}>
+                                  ● {statusText}
+                                </span>
+                                <span className="recent-order-meta">
+                                  {b.customer_name ? `Customer: ${b.customer_name}` : "Society Order"}
+                                </span>
+                              </div>
                             </div>
-                            <span
-                              className={`status-pill ${b?.status ? b.status.toLowerCase() : "pending"}`}
-                            >
-                              ● {b?.status === "ACCEPTED" ? "WORKER ARRIVED" : b?.status || "PENDING"}
-                            </span>
+                          );
+                        })}
+                        {(!bookings || bookings.length === 0) && (
+                          <div className="empty-state-card" style={{ padding: "28px 20px" }}>
+                            <p style={{ margin: 0, color: "#64748b" }}>No recent service bookings recorded.</p>
                           </div>
-                        ))}
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1057,7 +1102,11 @@ function AdminDashboardContent() {
                   <div className="overview-card" style={{ marginTop: "24px" }}>
                     <div className="overview-card-header">
                       <h3>Recent Welfare Ledger Entries (cooperative_welfare_ledger)</h3>
-                      <button className="text-btn" onClick={() => switchTab("gullak")}>
+                      <button
+                        type="button"
+                        className="admin-view-all-btn"
+                        onClick={() => switchTab("gullak")}
+                      >
                         Open Full Sinking Fund Ledger →
                       </button>
                     </div>

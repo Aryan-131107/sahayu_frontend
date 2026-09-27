@@ -5245,39 +5245,431 @@ footer > p {
   background: linear-gradient(135deg, #ffffff 0%, #fffbeb 100%);
 }
 
-.gullak-banner-card {
-  background: linear-gradient(135deg, #78350f 0%, #451a03 100%);
-  color: #fef3c7;
+/* =========================================================
+   FEDERATION DASHBOARD — CLEAN PROFESSIONAL REDESIGN
+   ========================================================= */
+
+/* Overview Two-Column Grid */
+.overview-two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 24px;
+  margin-top: 24px;
+}
+
+@media (max-width: 840px) {
+  .overview-two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Overview Card Container */
+.overview-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 16px;
-  padding: 24px;
+  padding: 22px 24px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.overview-card-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+/* Polished View All Action Button */
+.admin-view-all-btn,
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  color: #047857;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+.admin-view-all-btn:hover,
+.text-btn:hover {
+  background: #ecfdf5;
+  border-color: #059669;
+  color: #065f46;
+  transform: translateY(-1px);
+}
+
+/* Prominent Gullak Welfare Pool Card */
+.gullak-banner-card {
   display: flex;
   align-items: center;
-  gap: 20px;
+  justify-content: space-between;
+  gap: 24px;
+  background: #ffffff;
+  border: 1.5px solid #fed7aa;
+  border-radius: 16px;
+  padding: 24px 28px;
   margin-bottom: 24px;
-  box-shadow: 0 10px 25px -5px rgba(120, 53, 15, 0.3);
+  box-shadow: 0 2px 10px rgba(245, 158, 11, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.gullak-banner-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  background: #f59e0b;
+}
+
+.gullak-banner-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  flex: 1;
 }
 
 .gullak-banner-icon {
-  font-size: 40px;
-  background: rgba(254, 243, 199, 0.15);
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 30px;
   flex-shrink: 0;
+}
+
+.gullak-banner-content {
+  flex: 1;
+}
+
+.gullak-banner-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
 }
 
 .gullak-active-pill {
   display: inline-block;
-  background: #f59e0b;
-  color: #78350f;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
   font-size: 11px;
   font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 6px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.gullak-main-heading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.gullak-amount-highlight {
+  font-size: 32px;
+  font-weight: 800;
+  color: #b45309;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+.gullak-amount-sublabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.gullak-banner-desc {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
+  max-width: 680px;
+}
+
+.gullak-grant-action-btn {
+  background: #92400e;
+  color: #ffffff;
+  border: 1.5px solid #78350f;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 2px 6px rgba(146, 64, 14, 0.2);
+}
+
+.gullak-grant-action-btn:hover {
+  background: #78350f;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(146, 64, 14, 0.3);
+}
+
+@media (max-width: 768px) {
+  .gullak-banner-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 18px;
+    padding: 20px;
+  }
+  .gullak-grant-action-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Recent Service Orders Cards */
+.recent-orders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.recent-order-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 0.18s ease;
+}
+
+.recent-order-card:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+.recent-order-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.recent-order-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.recent-order-id-badge {
+  background: #f1f5f9;
+  color: #334155;
+  font-family: monospace;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.recent-order-service-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-order-amount {
+  font-size: 15px;
+  font-weight: 800;
+  color: #047857;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.recent-order-bottom-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.recent-order-meta {
+  font-size: 12px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* e-Shram Queue List & Items */
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.queue-card-item {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  transition: all 0.18s ease;
+}
+
+.queue-card-item:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.queue-worker-info strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 2px;
+}
+
+.queue-worker-info small {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.queue-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.action-btn.verify {
+  background: #059669;
+  color: #ffffff;
+  border: 1px solid #047857;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.action-btn.verify:hover {
+  background: #047857;
+}
+
+.action-btn.reject {
+  background: #ffffff;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.action-btn.reject:hover {
+  background: #fef2f2;
+}
+
+/* Polished Status Pills with Clear Contrast */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
   padding: 3px 10px;
   border-radius: 999px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.status-pill.completed,
+.status-pill.settled {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.status-pill.accepted,
+.status-pill.worker-arrived,
+.status-pill.active {
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+.status-pill.in_progress,
+.status-pill.in-progress {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.status-pill.payment_pending,
+.status-pill.payment-pending,
+.status-pill.pending_approval {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.status-pill.assigned,
+.status-pill.pending {
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.status-pill.cancelled,
+.status-pill.rejected {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
 }
 
 .gullak-allocations-grid {
